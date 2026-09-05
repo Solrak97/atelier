@@ -30,6 +30,13 @@ Caduceus is at the beginning of its journey. Design and technical decisions will
 be documented as they are made, and work will be tracked in the
 [Caduceus project](https://github.com/users/Solrak97/projects/8).
 
+## Architecture
+
+Significant technical choices are recorded as architecture decisions:
+
+- [Foundational stack](docs/architecture/0001-foundational-stack.md) — Rust,
+  GPUI, Crop, and the boundaries for future parsing and language intelligence
+
 ## License
 
 No license has been selected yet.
