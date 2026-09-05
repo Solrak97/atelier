@@ -37,6 +37,25 @@ Significant technical choices are recorded as architecture decisions:
 - [Foundational stack](docs/architecture/0001-foundational-stack.md) — Rust,
   GPUI, Crop, and the boundaries for future parsing and language intelligence
 
+## Development
+
+Caduceus currently targets Linux and requires the latest stable Rust toolchain.
+GPUI also needs a C/C++ build toolchain, Fontconfig, XKB, and either Wayland or
+X11 development libraries.
+
+On Arch Linux and derivatives:
+
+```sh
+sudo pacman -S --needed base-devel clang cmake pkgconf fontconfig freetype2 \
+  libx11 libxcb libxkbcommon wayland vulkan-icd-loader
+```
+
+Build and run the current application with:
+
+```sh
+cargo run
+```
+
 ## License
 
 No license has been selected yet.
