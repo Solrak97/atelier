@@ -69,6 +69,10 @@ impl EditorView {
         }
     }
 
+    pub fn is_modified(&self) -> bool {
+        self.editor.document().is_modified()
+    }
+
     fn backspace(&mut self, _: &Backspace, _: &mut Window, cx: &mut Context<Self>) {
         self.editor
             .backspace()

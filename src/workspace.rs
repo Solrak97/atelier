@@ -60,6 +60,7 @@ impl WorkspaceView {
             .expect("project documents must have a file path")
             .to_path_buf();
         let editor = cx.new(|cx| EditorView::new(document, cx));
+        cx.observe(&editor, |_, _, cx| cx.notify()).detach();
         self.open_documents.push(OpenDocument {
             path,
             editor: editor.clone(),
@@ -234,12 +235,15 @@ impl Render for WorkspaceView {
                             .children(self.open_documents.iter().enumerate().map(
                                 |(index, document)| {
                                     let is_active = self.active_document == Some(index);
-                                    let name = document
+                                    let mut name = document
                                         .path
                                         .file_name()
                                         .unwrap_or(document.path.as_os_str())
                                         .to_string_lossy()
                                         .into_owned();
+                                    if document.editor.read(cx).is_modified() {
+                                        name.push_str(" ●");
+                                    }
                                     div()
                                         .h_full()
                                         .flex()
