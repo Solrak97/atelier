@@ -1,4 +1,5 @@
 mod editor;
+mod languages;
 mod workspace;
 
 use std::{io, path::PathBuf};

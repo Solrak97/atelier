@@ -1,13 +1,15 @@
 use std::ops::Range;
 
-use caduceus_core::{ByteOffset, Document, Editor};
+use caduceus_core::{ByteOffset, Document, Editor, Revision};
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
-    Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId, KeyBinding, LayoutId,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
+    Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId, Hsla, KeyBinding,
+    LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
     ShapedLine, Style, TextRun, UTF16Selection, Window, actions, div, fill, point, prelude::*, px,
     relative, rgb, rgba, size,
 };
+
+use crate::languages::{HighlightKind, HighlightSpan, LanguageExtension, registry};
 
 actions!(
     caduceus_editor,
@@ -56,16 +58,25 @@ pub struct EditorView {
     marked_range: Option<Range<usize>>,
     cached_lines: Vec<CachedLine>,
     is_selecting: bool,
+    language: Option<&'static dyn LanguageExtension>,
+    highlighted_revision: Option<Revision>,
+    highlight_spans: Vec<HighlightSpan>,
 }
 
 impl EditorView {
     pub fn new(document: Document, cx: &mut Context<Self>) -> Self {
+        let language = document
+            .path()
+            .and_then(|path| registry().extension_for_path(path));
         Self {
             editor: Editor::new(document),
             focus_handle: cx.focus_handle(),
             marked_range: None,
             cached_lines: Vec::new(),
             is_selecting: false,
+            language,
+            highlighted_revision: None,
+            highlight_spans: Vec::new(),
         }
     }
 
@@ -427,6 +438,14 @@ impl EntityInputHandler for EditorView {
 
 impl Render for EditorView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let current_revision = self.editor.document().revision();
+        if self.highlighted_revision != Some(current_revision) {
+            self.highlight_spans = self
+                .language
+                .and_then(|language| language.highlight(&self.content()).ok())
+                .unwrap_or_default();
+            self.highlighted_revision = Some(current_revision);
+        }
         let path = self
             .editor
             .document()
@@ -504,7 +523,15 @@ impl Render for EditorView {
                     .bg(rgb(0x181b20))
                     .text_size(px(12.0))
                     .text_color(rgb(0x8f96a3))
-                    .child("Editing in memory · Ctrl+A/C/X/V supported"),
+                    .child(match self.language {
+                        Some(language) => format!(
+                            "{} extension · Editing in memory · Ctrl+A/C/X/V supported",
+                            language.name()
+                        ),
+                        None => {
+                            "Plain text · Editing in memory · Ctrl+A/C/X/V supported".to_owned()
+                        }
+                    }),
             )
     }
 }
@@ -548,6 +575,23 @@ struct VisualLine<'a> {
     start: usize,
     display_end: usize,
     full_end: usize,
+}
+
+fn highlight_color(kind: HighlightKind) -> Hsla {
+    match kind {
+        HighlightKind::Attribute | HighlightKind::Property => rgb(0x56b6c2).into(),
+        HighlightKind::Boolean | HighlightKind::Constant | HighlightKind::Number => {
+            rgb(0xd19a66).into()
+        }
+        HighlightKind::Comment => rgb(0x7f848e).into(),
+        HighlightKind::Constructor | HighlightKind::Type => rgb(0xe5c07b).into(),
+        HighlightKind::Function => rgb(0x61afef).into(),
+        HighlightKind::Keyword => rgb(0xc678dd).into(),
+        HighlightKind::Operator | HighlightKind::Punctuation | HighlightKind::Variable => {
+            rgb(0xd7dae0).into()
+        }
+        HighlightKind::String => rgb(0x98c379).into(),
+    }
 }
 
 fn visual_lines(content: &str) -> Vec<VisualLine<'_>> {
@@ -630,6 +674,7 @@ impl Element for EditorElement {
         let content = editor.content();
         let selection = editor.editor.selection().range();
         let cursor_offset = editor.editor.cursor().get();
+        let highlight_spans = &editor.highlight_spans;
         let text_style = window.text_style();
         let font_size = text_style.font_size.to_pixels(window.rem_size());
         let line_height = window.line_height();
@@ -641,17 +686,42 @@ impl Element for EditorElement {
 
         for (index, visual_line) in visual_lines(&content).into_iter().enumerate() {
             let text = visual_line.text.to_owned().into();
-            let run = TextRun {
-                len: visual_line.text.len(),
+            let make_run = |len, color| TextRun {
+                len,
                 font: text_style.font(),
-                color: text_style.color,
+                color,
                 background_color: None,
                 underline: None,
                 strikethrough: None,
             };
+            let mut runs = Vec::new();
+            let mut run_start = visual_line.start;
+            for span in highlight_spans
+                .iter()
+                .filter(|span| span.end > visual_line.start && span.start < visual_line.display_end)
+            {
+                let start = span.start.max(run_start).max(visual_line.start);
+                let end = span.end.min(visual_line.display_end);
+                if run_start < start {
+                    runs.push(make_run(start - run_start, text_style.color));
+                }
+                if start < end {
+                    runs.push(make_run(end - start, highlight_color(span.kind)));
+                    run_start = end;
+                }
+            }
+            if run_start < visual_line.display_end {
+                runs.push(make_run(
+                    visual_line.display_end - run_start,
+                    text_style.color,
+                ));
+            }
+            if runs.is_empty() {
+                runs.push(make_run(visual_line.text.len(), text_style.color));
+            }
             let layout = window
                 .text_system()
-                .shape_line(text, font_size, &[run], None);
+                .shape_line(text, font_size, &runs, None);
             let line_bounds = Bounds::new(
                 point(left, top + line_height * index as f32),
                 size(bounds.right() - left, line_height),
