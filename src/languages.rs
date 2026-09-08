@@ -1,6 +1,9 @@
 use std::{path::Path, sync::OnceLock};
 
+use tree_sitter::Query;
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
+
+use crate::analysis::SyntaxSession;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum HighlightKind {
@@ -31,12 +34,15 @@ pub(crate) trait LanguageExtension: Send + Sync {
     fn name(&self) -> &'static str;
     fn matches_path(&self, path: &Path) -> bool;
     fn highlight(&self, source: &str) -> Result<Vec<HighlightSpan>, String>;
+    fn analysis_session(&self) -> Result<SyntaxSession, String>;
 }
 
 struct TreeSitterLanguageExtension {
     name: &'static str,
     file_extensions: &'static [&'static str],
+    language: tree_sitter::Language,
     configuration: HighlightConfiguration,
+    tags_query: &'static str,
 }
 
 impl TreeSitterLanguageExtension {
@@ -47,9 +53,15 @@ impl TreeSitterLanguageExtension {
         highlights_query: &str,
         injections_query: &str,
         locals_query: &str,
+        tags_query: &'static str,
     ) -> Self {
+        if !tags_query.is_empty() {
+            Query::new(&language, tags_query).unwrap_or_else(|error| {
+                panic!("invalid {name} tags query: {error}");
+            });
+        }
         let mut configuration = HighlightConfiguration::new(
-            language,
+            language.clone(),
             name,
             highlights_query,
             injections_query,
@@ -60,7 +72,9 @@ impl TreeSitterLanguageExtension {
         Self {
             name,
             file_extensions,
+            language,
             configuration,
+            tags_query,
         }
     }
 }
@@ -114,6 +128,10 @@ impl LanguageExtension for TreeSitterLanguageExtension {
 
         Ok(spans)
     }
+
+    fn analysis_session(&self) -> Result<SyntaxSession, String> {
+        SyntaxSession::new(self.language.clone(), self.tags_query)
+    }
 }
 
 pub(crate) struct LanguageRegistry {
@@ -131,6 +149,7 @@ impl LanguageRegistry {
                     tree_sitter_rust::HIGHLIGHTS_QUERY,
                     tree_sitter_rust::INJECTIONS_QUERY,
                     "",
+                    tree_sitter_rust::TAGS_QUERY,
                 )),
                 Box::new(TreeSitterLanguageExtension::new(
                     "TOML",
@@ -139,6 +158,7 @@ impl LanguageRegistry {
                     tree_sitter_toml_ng::HIGHLIGHTS_QUERY,
                     "",
                     "",
+                    TOML_TAGS_QUERY,
                 )),
             ],
         }
@@ -159,6 +179,12 @@ pub(crate) fn registry() -> &'static LanguageRegistry {
     static REGISTRY: OnceLock<LanguageRegistry> = OnceLock::new();
     REGISTRY.get_or_init(LanguageRegistry::built_in)
 }
+
+const TOML_TAGS_QUERY: &str = r#"
+(pair (bare_key) @name) @definition.constant
+(table (bare_key) @name) @definition.module
+(table_array_element (bare_key) @name) @definition.module
+"#;
 
 const HIGHLIGHT_NAMES: &[&str] = &[
     "attribute",

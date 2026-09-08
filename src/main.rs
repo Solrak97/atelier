@@ -1,3 +1,4 @@
+mod analysis;
 mod editor;
 mod languages;
 mod scrollbar;
