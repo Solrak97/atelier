@@ -36,6 +36,8 @@ Significant technical choices are recorded as architecture decisions:
 
 - [Foundational stack](docs/architecture/0001-foundational-stack.md) — Rust,
   GPUI, Crop, and the boundaries for future parsing and language intelligence
+- [Application and project storage](docs/architecture/0002-application-and-project-storage.md)
+  — XDG app directories, `.caduceus/` project files, and the welcome session
 
 ## Development
 
@@ -56,14 +58,20 @@ Build and run the current application with:
 cargo run
 ```
 
-By default, Caduceus opens the current directory as a project. Pass another
-directory to explore it, or pass a UTF-8 text file to open its parent project
-with that file active:
+With no arguments, Caduceus opens a welcome screen. Open a folder from there,
+or pass a directory or UTF-8 text file on the command line:
 
 ```sh
 cargo run -- /path/to/project
 cargo run -- README.md
 ```
+
+Application files live in XDG user directories (`~/.config/caduceus`,
+`~/.local/share/caduceus`, `~/.cache/caduceus`). Opening a folder records it in
+the recent-project list and creates a `.caduceus/` directory inside that
+project for later local state. `Ctrl+O` also opens a folder. Close Project on
+the sidebar returns to the welcome screen; unsaved files prompt to save,
+discard, or cancel.
 
 The project tree opens files into persistent tabs. The editor supports typing,
 newlines, horizontal and vertical movement, scrolling, selection, clipboard

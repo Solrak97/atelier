@@ -1,39 +1,62 @@
 mod editor;
 mod languages;
+mod shell;
+mod welcome;
 mod workspace;
 
 use std::{io, path::PathBuf};
 
-use caduceus_core::{Document, Project};
+use caduceus_core::{AppPaths, Project, ProjectRegistry};
 use gpui::{App, Bounds, TitlebarOptions, WindowBounds, WindowOptions, prelude::*, px, size};
-use workspace::WorkspaceView;
+use shell::AppShell;
 
-fn startup() -> io::Result<(Project, Option<Document>)> {
-    let path = std::env::args_os()
-        .nth(1)
-        .map(PathBuf::from)
-        .unwrap_or(std::env::current_dir()?);
-
-    if path.is_dir() {
-        return Ok((Project::open(path)?, None));
+fn load_registry(paths: &AppPaths) -> ProjectRegistry {
+    match ProjectRegistry::load(paths) {
+        Ok(registry) => registry,
+        Err(error) => {
+            eprintln!("failed to read project registry: {error}");
+            ProjectRegistry::empty(paths)
+        }
     }
+}
 
-    let document = Document::open(&path)?;
-    let root = document
-        .path()
-        .and_then(|path| path.parent())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "file has no parent"))?;
-    Ok((Project::open(root)?, Some(document)))
+fn initial_project() -> io::Result<Option<(Project, Option<caduceus_core::Document>)>> {
+    let Some(path) = std::env::args_os().nth(1).map(PathBuf::from) else {
+        return Ok(None);
+    };
+    let (project, document) = Project::open_from_path(path)?;
+    if let Err(error) = project.ensure_metadata_dir() {
+        eprintln!(
+            "opened {}, but could not create .caduceus/: {error}",
+            project.root().display()
+        );
+    }
+    Ok(Some((project, document)))
 }
 
 fn main() {
-    let (project, document) = startup().unwrap_or_else(|error| {
-        eprintln!("failed to open project: {error}");
+    let paths = AppPaths::standard().unwrap_or_else(|error| {
+        eprintln!("failed to create application directories: {error}");
         std::process::exit(1);
     });
+    let mut registry = load_registry(&paths);
+    let initial = match initial_project() {
+        Ok(Some((project, document))) => {
+            if let Err(error) = registry.record(project.root()) {
+                eprintln!("failed to remember project: {error}");
+            }
+            Some((project, document))
+        }
+        Ok(None) => None,
+        Err(error) => {
+            eprintln!("failed to open project: {error}");
+            std::process::exit(1);
+        }
+    };
 
     gpui_platform::application().run(move |cx: &mut App| {
         editor::register_key_bindings(cx);
+        shell::register_key_bindings(cx);
         cx.on_window_closed(|cx, _window_id| {
             if cx.windows().is_empty() {
                 cx.quit();
@@ -53,15 +76,15 @@ fn main() {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     ..Default::default()
                 },
-                |_, cx| cx.new(|cx| WorkspaceView::new(project, document, cx)),
+                move |_, cx| cx.new(|cx| AppShell::new(registry, initial, cx)),
             )
             .expect("failed to open the Caduceus window");
 
         window
-            .update(cx, |workspace, window, cx| {
-                workspace.focus_active(window, cx);
+            .update(cx, |shell, window, cx| {
+                shell.focus_session(window, cx);
             })
-            .expect("failed to focus the initial document");
+            .expect("failed to focus the initial session");
 
         cx.activate(true);
     });

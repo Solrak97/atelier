@@ -5,6 +5,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::Document;
+
+/// Directory created at a project root for Caduceus-owned project files.
+pub const PROJECT_METADATA_DIR: &str = ".caduceus";
+
 /// A directory opened as a Caduceus project.
 pub struct Project {
     root: PathBuf,
@@ -23,6 +28,27 @@ impl Project {
 
         let entries = read_entries(&root)?;
         Ok(Self { root, entries })
+    }
+
+    /// Open a directory, or a file's parent directory with that file loaded.
+    pub fn open_from_path(path: impl AsRef<Path>) -> io::Result<(Self, Option<Document>)> {
+        let path = path.as_ref();
+        if path.is_dir() {
+            return Ok((Self::open(path)?, None));
+        }
+
+        let document = Document::open(path)?;
+        let root = document
+            .path()
+            .and_then(Path::parent)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "file has no parent"))?;
+        Ok((Self::open(root)?, Some(document)))
+    }
+
+    pub fn ensure_metadata_dir(&self) -> io::Result<PathBuf> {
+        let directory = self.root.join(PROJECT_METADATA_DIR);
+        fs::create_dir_all(&directory)?;
+        Ok(directory)
     }
 
     pub fn root(&self) -> &Path {
@@ -110,7 +136,10 @@ fn read_entries(directory: &Path) -> io::Result<Vec<ProjectEntry>> {
 }
 
 fn is_ignored(name: &OsStr) -> bool {
-    matches!(name.to_str(), Some(".git" | "target"))
+    matches!(
+        name.to_str(),
+        Some(".git" | "target" | PROJECT_METADATA_DIR)
+    )
 }
 
 #[cfg(test)]
@@ -176,6 +205,31 @@ mod tests {
 
         assert_eq!(project.entries().len(), 1);
         assert_eq!(project.entries()[0].name(), "visible.txt");
+    }
+
+    #[test]
+    fn creates_hidden_metadata_directory() {
+        let temp = TempProject::new();
+        fs::write(temp.0.join("visible.txt"), "visible").unwrap();
+        let project = Project::open(&temp.0).unwrap();
+        let metadata = project.ensure_metadata_dir().unwrap();
+        fs::write(metadata.join("scratch"), "local").unwrap();
+
+        let reopened = Project::open(&temp.0).unwrap();
+        assert!(metadata.is_dir());
+        assert_eq!(reopened.entries().len(), 1);
+        assert_eq!(reopened.entries()[0].name(), "visible.txt");
+    }
+
+    #[test]
+    fn opens_a_file_through_its_parent_project() {
+        let temp = TempProject::new();
+        let file = temp.0.join("notes.txt");
+        fs::write(&file, "hello").unwrap();
+
+        let (project, document) = Project::open_from_path(&file).unwrap();
+        assert_eq!(project.root(), fs::canonicalize(&temp.0).unwrap());
+        assert_eq!(document.unwrap().text(), "hello");
     }
 
     #[test]
