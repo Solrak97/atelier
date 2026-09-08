@@ -7,6 +7,7 @@ use gpui::{
 };
 
 use crate::editor::{EditorView, Save};
+use crate::scrollbar::VerticalScroll;
 use crate::shell::{CloseProject, OpenFolder};
 
 pub struct WorkspaceView {
@@ -14,6 +15,7 @@ pub struct WorkspaceView {
     open_documents: Vec<OpenDocument>,
     active_document: Option<usize>,
     message: Option<String>,
+    tree_scroll: VerticalScroll,
 }
 
 struct OpenDocument {
@@ -39,6 +41,7 @@ impl WorkspaceView {
             open_documents: Vec::new(),
             active_document: None,
             message: None,
+            tree_scroll: VerticalScroll::new(),
         };
 
         if let Some(document) = initial_document {
@@ -305,43 +308,51 @@ impl Render for WorkspaceView {
                     )
                     .child(
                         div()
-                            .id("project-tree")
+                            .relative()
+                            .min_h_0()
                             .flex_1()
-                            .overflow_y_scroll()
-                            .py_2()
-                            .children(entries.into_iter().map(|entry| {
-                                let path = entry.path.clone();
-                                let label = if entry.is_directory {
-                                    format!("▾ {}", entry.name)
-                                } else {
-                                    entry.name
-                                };
+                            .child(
                                 div()
-                                    .h(px(24.0))
-                                    .flex()
-                                    .items_center()
-                                    .pl(px(10.0 + entry.depth as f32 * 14.0))
-                                    .pr_2()
-                                    .text_size(px(13.0))
-                                    .text_color(if entry.is_directory {
-                                        rgb(0xaeb4bf)
-                                    } else {
-                                        rgb(0xd7dae0)
-                                    })
-                                    .child(label)
-                                    .when(!entry.is_directory, |row| {
-                                        row.cursor_pointer()
-                                            .hover(|style| style.bg(rgb(0x242932)))
-                                            .on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(
-                                                move |workspace, _: &MouseUpEvent, window, cx| {
-                                                    workspace.open_file(&path, window, cx);
-                                                },
-                                            ),
-                                        )
-                                    })
-                            })),
+                                    .id("project-tree")
+                                    .size_full()
+                                    .overflow_y_scroll()
+                                    .track_scroll(self.tree_scroll.handle())
+                                    .py_2()
+                                    .children(entries.into_iter().map(|entry| {
+                                        let path = entry.path.clone();
+                                        let label = if entry.is_directory {
+                                            format!("▾ {}", entry.name)
+                                        } else {
+                                            entry.name
+                                        };
+                                        div()
+                                            .h(px(24.0))
+                                            .flex()
+                                            .items_center()
+                                            .pl(px(10.0 + entry.depth as f32 * 14.0))
+                                            .pr_2()
+                                            .text_size(px(13.0))
+                                            .text_color(if entry.is_directory {
+                                                rgb(0xaeb4bf)
+                                            } else {
+                                                rgb(0xd7dae0)
+                                            })
+                                            .child(label)
+                                            .when(!entry.is_directory, |row| {
+                                                row.cursor_pointer()
+                                                    .hover(|style| style.bg(rgb(0x242932)))
+                                                    .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(
+                                                        move |workspace, _: &MouseUpEvent, window, cx| {
+                                                            workspace.open_file(&path, window, cx);
+                                                        },
+                                                    ),
+                                                )
+                                            })
+                                    })),
+                            )
+                            .child(self.tree_scroll.bar("project-tree-scrollbar", cx)),
                     )
                     .when_some(self.message.clone(), |sidebar, message| {
                         sidebar.child(

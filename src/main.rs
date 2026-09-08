@@ -1,5 +1,6 @@
 mod editor;
 mod languages;
+mod scrollbar;
 mod shell;
 mod welcome;
 mod workspace;
