@@ -4,9 +4,7 @@ mod workspace;
 use std::{io, path::PathBuf};
 
 use caduceus_core::{Document, Project};
-use gpui::{
-    App, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions, prelude::*, px, size,
-};
+use gpui::{App, Bounds, TitlebarOptions, WindowBounds, WindowOptions, prelude::*, px, size};
 use workspace::WorkspaceView;
 
 fn startup() -> io::Result<(Project, Option<Document>)> {
@@ -33,9 +31,9 @@ fn main() {
         std::process::exit(1);
     });
 
-    Application::new().run(move |cx: &mut App| {
+    gpui_platform::application().run(move |cx: &mut App| {
         editor::register_key_bindings(cx);
-        cx.on_window_closed(|cx| {
+        cx.on_window_closed(|cx, _window_id| {
             if cx.windows().is_empty() {
                 cx.quit();
             }

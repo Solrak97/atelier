@@ -186,7 +186,7 @@ impl EditorView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        window.focus(&self.focus_handle);
+        window.focus(&self.focus_handle, cx);
         let offset = self.offset_for_position(event.position);
         let anchor = if event.modifiers.shift {
             self.editor.selection().anchor()
@@ -740,7 +740,14 @@ impl Element for EditorElement {
         let mut cached_lines = Vec::with_capacity(prepaint.lines.len());
         for line in prepaint.lines.drain(..) {
             line.layout
-                .paint(line.bounds.origin, line.bounds.size.height, window, cx)
+                .paint(
+                    line.bounds.origin,
+                    line.bounds.size.height,
+                    gpui::TextAlign::Left,
+                    None,
+                    window,
+                    cx,
+                )
                 .expect("shaped editor line must paint");
             cached_lines.push(CachedLine {
                 start: line.start,

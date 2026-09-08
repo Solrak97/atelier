@@ -10,7 +10,13 @@ resolver = "3"
 
 [dependencies]
 caduceus-core = { path = "crates/caduceus-core" }
-gpui = "=0.2.2"
+gpui = { git = "https://github.com/zed-industries/zed.git", rev = "490aad88d5c754e4b0fbbb2bf1e3d6936df27729" }
+gpui_platform = { git = "https://github.com/zed-industries/zed.git", rev = "490aad88d5c754e4b0fbbb2bf1e3d6936df27729", features = [
+    "wayland",
+    "x11",
+] }
 
 [dev-dependencies]
-gpui = { version = "=0.2.2", features = ["test-support"] }
+gpui = { git = "https://github.com/zed-industries/zed.git", rev = "490aad88d5c754e4b0fbbb2bf1e3d6936df27729", features = [
+    "test-support",
+] }

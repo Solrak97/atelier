@@ -45,12 +45,12 @@ impl WorkspaceView {
         workspace
     }
 
-    pub fn focus_active(&self, window: &mut Window, cx: &App) {
+    pub fn focus_active(&self, window: &mut Window, cx: &mut App) {
         if let Some(document) = self
             .active_document
             .and_then(|index| self.open_documents.get(index))
         {
-            window.focus(&document.editor.focus_handle(cx));
+            window.focus(&document.editor.focus_handle(cx), cx);
         }
     }
 
@@ -101,7 +101,7 @@ impl WorkspaceView {
             self.message = None;
             cx.notify();
             cx.defer_in(window, move |_, window, cx| {
-                window.focus(&editor.focus_handle(cx));
+                window.focus(&editor.focus_handle(cx), cx);
             });
         }
     }
