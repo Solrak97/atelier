@@ -66,10 +66,10 @@ cargo run -- README.md
 ```
 
 The project tree opens files into persistent tabs. The editor supports typing,
-newlines, horizontal and vertical movement, scrolling, selection, and clipboard
-shortcuts. Rust and TOML files receive Tree-sitter syntax highlighting through
-the first built-in language extensions. Changes remain in memory until file
-saving is implemented.
+newlines, horizontal and vertical movement, scrolling, selection, clipboard
+shortcuts, and `Ctrl+S` to save. Closing a modified tab asks to save, discard,
+or cancel. Rust and TOML files receive Tree-sitter syntax highlighting through
+the first built-in language extensions.
 
 ## License
 

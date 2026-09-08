@@ -1,11 +1,13 @@
 use std::{
     error::Error,
-    fmt, fs, io,
+    fmt, fs,
+    io::{self, Write},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
 
 use crop::Rope;
+use tempfile::NamedTempFile;
 
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -182,6 +184,40 @@ impl Document {
 
     pub fn mark_saved(&mut self) {
         self.modified = false;
+    }
+
+    pub fn save(&mut self) -> io::Result<()> {
+        let path = self.path.as_deref().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "cannot save a document without a file path",
+            )
+        })?;
+        let parent = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let mut temporary = NamedTempFile::new_in(parent)?;
+
+        match fs::metadata(path) {
+            Ok(metadata) => temporary
+                .as_file()
+                .set_permissions(metadata.permissions())?,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+
+        for chunk in self.text.chunks() {
+            temporary.write_all(chunk.as_bytes())?;
+        }
+        temporary.as_file().sync_all()?;
+        temporary.persist(path).map_err(|error| error.error)?;
+
+        #[cfg(unix)]
+        fs::File::open(parent)?.sync_all()?;
+
+        self.mark_saved();
+        Ok(())
     }
 
     pub fn len_bytes(&self) -> usize {
@@ -430,6 +466,8 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    use tempfile::tempdir;
+
     use super::*;
 
     #[test]
@@ -475,6 +513,67 @@ mod tests {
 
         assert!(!document.is_modified());
         assert_eq!(document.revision(), Revision(1));
+    }
+
+    #[test]
+    fn saves_file_contents_and_clears_modified_state() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("document.txt");
+        fs::write(&path, "before").unwrap();
+        let mut document = Document::open(&path).unwrap();
+        document.replace((0..6).into(), "after").unwrap();
+
+        document.save().unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "after");
+        assert!(!document.is_modified());
+        assert_eq!(document.revision(), Revision(1));
+    }
+
+    #[test]
+    fn failed_save_keeps_the_document_modified() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("occupied");
+        fs::create_dir(&path).unwrap();
+        let mut document = Document::with_path(&path, "content");
+        document.insert(document.len_bytes().into(), "!").unwrap();
+
+        assert!(document.save().is_err());
+
+        assert!(path.is_dir());
+        assert!(document.is_modified());
+        assert_eq!(document.text(), "content!");
+    }
+
+    #[test]
+    fn rejects_saving_a_document_without_a_path() {
+        let mut document = Document::new("content");
+        document.insert(document.len_bytes().into(), "!").unwrap();
+
+        let error = document.save().unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(document.is_modified());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preserves_existing_file_permissions_when_saving() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("executable.sh");
+        fs::write(&path, "before").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o750)).unwrap();
+        let mut document = Document::open(&path).unwrap();
+        document.replace((0..6).into(), "after").unwrap();
+
+        document.save().unwrap();
+
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o750
+        );
     }
 
     #[test]

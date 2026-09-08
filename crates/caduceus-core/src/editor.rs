@@ -1,3 +1,5 @@
+use std::io;
+
 use crate::{ByteOffset, ByteRange, Document, EditError, Revision};
 
 /// An anchored selection whose head is the active caret position.
@@ -51,6 +53,10 @@ impl Editor {
 
     pub const fn document(&self) -> &Document {
         &self.document
+    }
+
+    pub fn save(&mut self) -> io::Result<()> {
+        self.document.save()
     }
 
     pub const fn selection(&self) -> Selection {
@@ -266,5 +272,19 @@ mod tests {
         editor.move_down(true);
 
         assert_eq!(editor.selection(), Selection::new(3.into(), 9.into()));
+    }
+
+    #[test]
+    fn saves_through_the_editor() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("notes.txt");
+        std::fs::write(&path, "before").unwrap();
+        let mut editor = Editor::new(Document::open(&path).unwrap());
+        editor.insert("after ").unwrap();
+
+        editor.save().unwrap();
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "after before");
+        assert!(!editor.document().is_modified());
     }
 }

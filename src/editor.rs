@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{io, ops::Range};
 
 use caduceus_core::{ByteOffset, Document, Editor, Revision};
 use gpui::{
@@ -29,6 +29,7 @@ actions!(
         Copy,
         Cut,
         Paste,
+        Save,
     ]
 );
 
@@ -49,6 +50,8 @@ pub fn register_key_bindings(cx: &mut App) {
         KeyBinding::new("ctrl-c", Copy, Some("Editor")),
         KeyBinding::new("ctrl-x", Cut, Some("Editor")),
         KeyBinding::new("ctrl-v", Paste, Some("Editor")),
+        KeyBinding::new("ctrl-s", Save, Some("Editor")),
+        KeyBinding::new("ctrl-s", Save, Some("Workspace")),
     ]);
 }
 
@@ -61,6 +64,7 @@ pub struct EditorView {
     language: Option<&'static dyn LanguageExtension>,
     highlighted_revision: Option<Revision>,
     highlight_spans: Vec<HighlightSpan>,
+    save_error: Option<String>,
 }
 
 impl EditorView {
@@ -77,6 +81,7 @@ impl EditorView {
             language,
             highlighted_revision: None,
             highlight_spans: Vec::new(),
+            save_error: None,
         }
     }
 
@@ -84,28 +89,56 @@ impl EditorView {
         self.editor.document().is_modified()
     }
 
+    pub fn save(&mut self, cx: &mut Context<Self>) -> io::Result<()> {
+        if !self.is_modified() {
+            self.save_error = None;
+            cx.notify();
+            return Ok(());
+        }
+
+        match self.editor.save() {
+            Ok(()) => {
+                self.save_error = None;
+                cx.notify();
+                Ok(())
+            }
+            Err(error) => {
+                self.save_error = Some(error.to_string());
+                cx.notify();
+                Err(error)
+            }
+        }
+    }
+
+    fn save_action(&mut self, _: &Save, _: &mut Window, cx: &mut Context<Self>) {
+        let _ = self.save(cx);
+    }
+
+    fn note_edit(&mut self, cx: &mut Context<Self>) {
+        self.marked_range = None;
+        self.save_error = None;
+        cx.notify();
+    }
+
     fn backspace(&mut self, _: &Backspace, _: &mut Window, cx: &mut Context<Self>) {
         self.editor
             .backspace()
             .expect("selection must remain valid");
-        self.marked_range = None;
-        cx.notify();
+        self.note_edit(cx);
     }
 
     fn delete(&mut self, _: &Delete, _: &mut Window, cx: &mut Context<Self>) {
         self.editor
             .delete_forward()
             .expect("selection must remain valid");
-        self.marked_range = None;
-        cx.notify();
+        self.note_edit(cx);
     }
 
     fn enter(&mut self, _: &Enter, _: &mut Window, cx: &mut Context<Self>) {
         self.editor
             .insert("\n")
             .expect("selection must remain valid");
-        self.marked_range = None;
-        cx.notify();
+        self.note_edit(cx);
     }
 
     fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
@@ -176,8 +209,7 @@ impl EditorView {
         self.copy(&Copy, window, cx);
         if !self.editor.selection().is_empty() {
             self.editor.insert("").expect("selection must remain valid");
-            self.marked_range = None;
-            cx.notify();
+            self.note_edit(cx);
         }
     }
 
@@ -186,8 +218,7 @@ impl EditorView {
             self.editor
                 .insert(text)
                 .expect("selection must remain valid");
-            self.marked_range = None;
-            cx.notify();
+            self.note_edit(cx);
         }
     }
 
@@ -379,8 +410,7 @@ impl EntityInputHandler for EditorView {
                 range.start.get()..range.end.get()
             });
         self.replace_range(range, new_text);
-        self.marked_range = None;
-        cx.notify();
+        self.note_edit(cx);
     }
 
     fn replace_and_mark_text_in_range(
@@ -402,6 +432,7 @@ impl EntityInputHandler for EditorView {
             });
         let marked_start = range.start;
         self.replace_range(range, new_text);
+        self.save_error = None;
         self.marked_range =
             (!new_text.is_empty()).then_some(marked_start..marked_start + new_text.len());
         cx.notify();
@@ -453,6 +484,17 @@ impl Render for EditorView {
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "Untitled".to_owned());
         let revision = self.editor.document().revision().get();
+        let language_label = self
+            .language
+            .map(LanguageExtension::name)
+            .unwrap_or("Plain text");
+        let (save_label, save_color) = if let Some(error) = &self.save_error {
+            (format!("Save failed: {error}"), rgb(0xe06c75))
+        } else if self.is_modified() {
+            ("Unsaved changes · Ctrl+S to save".to_owned(), rgb(0xd19a66))
+        } else {
+            ("Saved · Ctrl+S".to_owned(), rgb(0x8f96a3))
+        };
 
         div()
             .size_full()
@@ -477,6 +519,7 @@ impl Render for EditorView {
             .on_action(cx.listener(Self::copy))
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::paste))
+            .on_action(cx.listener(Self::save_action))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
@@ -522,16 +565,8 @@ impl Render for EditorView {
                     .border_color(rgb(0x2a2e35))
                     .bg(rgb(0x181b20))
                     .text_size(px(12.0))
-                    .text_color(rgb(0x8f96a3))
-                    .child(match self.language {
-                        Some(language) => format!(
-                            "{} extension · Editing in memory · Ctrl+A/C/X/V supported",
-                            language.name()
-                        ),
-                        None => {
-                            "Plain text · Editing in memory · Ctrl+A/C/X/V supported".to_owned()
-                        }
-                    }),
+                    .text_color(save_color)
+                    .child(format!("{language_label} · {save_label}")),
             )
     }
 }
