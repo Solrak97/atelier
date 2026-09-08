@@ -744,6 +744,7 @@ name = "caduceus-core"
 version = "0.1.0"
 dependencies = [
  "crop",
+ "tempfile",
 ]
 
 [[package]]

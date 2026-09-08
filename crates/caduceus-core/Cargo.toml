@@ -6,3 +6,4 @@ publish = false
 
 [dependencies]
 crop = "=0.4.3"
+tempfile = "=3.27.0"

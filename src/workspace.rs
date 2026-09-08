@@ -2,10 +2,11 @@ use std::path::{Path, PathBuf};
 
 use caduceus_core::{Document, Project, ProjectEntry, ProjectEntryKind};
 use gpui::{
-    App, Context, Entity, Focusable, MouseButton, MouseUpEvent, Window, div, prelude::*, px, rgb,
+    App, Context, Entity, Focusable, MouseButton, MouseUpEvent, PromptLevel, Window, div,
+    prelude::*, px, rgb,
 };
 
-use crate::editor::EditorView;
+use crate::editor::{EditorView, Save};
 
 pub struct WorkspaceView {
     project: Project,
@@ -101,16 +102,71 @@ impl WorkspaceView {
         }
     }
 
+    fn save_document(&mut self, index: usize, cx: &mut Context<Self>) -> std::io::Result<()> {
+        let Some(document) = self.open_documents.get(index) else {
+            return Ok(());
+        };
+        let path = document.path.clone();
+        match document.editor.update(cx, |editor, cx| editor.save(cx)) {
+            Ok(()) => {
+                self.message = None;
+                cx.notify();
+                Ok(())
+            }
+            Err(error) => {
+                self.message = Some(format!("Could not save {}: {error}", path.display()));
+                cx.notify();
+                Err(error)
+            }
+        }
+    }
+
+    fn save_active(&mut self, _: &Save, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(index) = self.active_document {
+            let _ = self.save_document(index, cx);
+        }
+    }
+
     fn close_document(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(document) = self.open_documents.get(index) else {
             return;
         };
         if document.editor.read(cx).is_modified() {
-            self.message = Some(format!(
-                "Could not close {}: the document has unsaved changes",
-                document.path.display()
-            ));
-            cx.notify();
+            let name = document
+                .path
+                .file_name()
+                .unwrap_or(document.path.as_os_str())
+                .to_string_lossy()
+                .into_owned();
+            let answer = window.prompt(
+                PromptLevel::Warning,
+                &format!("Save changes to {name}?"),
+                Some("Unsaved changes will be lost if discarded."),
+                &["Save", "Discard", "Cancel"],
+                cx,
+            );
+            cx.spawn_in(window, async move |this, cx| {
+                let choice = answer.await.ok();
+                this.update_in(cx, |workspace, window, cx| match choice {
+                    Some(0) => {
+                        if workspace.save_document(index, cx).is_ok() {
+                            workspace.finish_close_document(index, window, cx);
+                        }
+                    }
+                    Some(1) => workspace.finish_close_document(index, window, cx),
+                    _ => {}
+                })
+                .ok();
+            })
+            .detach();
+            return;
+        }
+
+        self.finish_close_document(index, window, cx);
+    }
+
+    fn finish_close_document(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if index >= self.open_documents.len() {
             return;
         }
 
@@ -170,6 +226,8 @@ impl Render for WorkspaceView {
             .flex()
             .bg(rgb(0x111318))
             .text_color(rgb(0xd7dae0))
+            .key_context("Workspace")
+            .on_action(cx.listener(Self::save_active))
             .child(
                 div()
                     .w(px(250.0))
@@ -487,7 +545,39 @@ mod tests {
     }
 
     #[gpui::test]
-    fn refuses_to_close_a_document_with_unsaved_changes(cx: &mut TestAppContext) {
+    fn saves_the_active_document_and_clears_the_modified_marker(cx: &mut TestAppContext) {
+        let temp = TempWorkspace::new();
+        let file = temp.0.join("notes.txt");
+        fs::write(&file, "original").unwrap();
+        let project = Project::open(&temp.0).unwrap();
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| {
+                cx.new(|cx| WorkspaceView::new(project, None, cx))
+            })
+            .unwrap()
+        });
+
+        window
+            .update(cx, |workspace, window, cx| {
+                workspace.open_file(&file, window, cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+        cx.simulate_input(window.into(), "!");
+
+        window
+            .update(cx, |workspace, _, cx| {
+                assert!(workspace.open_documents[0].editor.read(cx).is_modified());
+                workspace.save_document(0, cx).unwrap();
+                assert!(!workspace.open_documents[0].editor.read(cx).is_modified());
+            })
+            .unwrap();
+
+        assert_eq!(fs::read_to_string(&file).unwrap(), "!original");
+    }
+
+    #[gpui::test]
+    fn close_prompt_can_save_discard_or_cancel(cx: &mut TestAppContext) {
         let temp = TempWorkspace::new();
         let file = temp.0.join("modified.txt");
         fs::write(&file, "original").unwrap();
@@ -512,18 +602,68 @@ mod tests {
                 workspace.close_document(0, window, cx);
             })
             .unwrap();
+        assert!(cx.has_pending_prompt());
+        cx.simulate_prompt_answer("Cancel");
+        cx.run_until_parked();
+
+        window
+            .update(cx, |workspace, _, cx| {
+                assert_eq!(workspace.open_documents.len(), 1);
+                assert!(workspace.open_documents[0].editor.read(cx).is_modified());
+            })
+            .unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "original");
+
+        window
+            .update(cx, |workspace, window, cx| {
+                workspace.close_document(0, window, cx);
+            })
+            .unwrap();
+        cx.simulate_prompt_answer("Save");
+        cx.run_until_parked();
 
         window
             .update(cx, |workspace, _, _| {
-                assert_eq!(workspace.open_documents.len(), 1);
-                assert_eq!(workspace.active_document, Some(0));
-                assert!(
-                    workspace
-                        .message
-                        .as_deref()
-                        .is_some_and(|message| message.contains("unsaved changes"))
-                );
+                assert!(workspace.open_documents.is_empty());
             })
             .unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "xoriginal");
+    }
+
+    #[gpui::test]
+    fn discarding_a_modified_document_closes_without_writing(cx: &mut TestAppContext) {
+        let temp = TempWorkspace::new();
+        let file = temp.0.join("scratch.txt");
+        fs::write(&file, "keep").unwrap();
+        let project = Project::open(&temp.0).unwrap();
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| {
+                cx.new(|cx| WorkspaceView::new(project, None, cx))
+            })
+            .unwrap()
+        });
+
+        window
+            .update(cx, |workspace, window, cx| {
+                workspace.open_file(&file, window, cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+        cx.simulate_input(window.into(), "!");
+
+        window
+            .update(cx, |workspace, window, cx| {
+                workspace.close_document(0, window, cx);
+            })
+            .unwrap();
+        cx.simulate_prompt_answer("Discard");
+        cx.run_until_parked();
+
+        window
+            .update(cx, |workspace, _, _| {
+                assert!(workspace.open_documents.is_empty());
+            })
+            .unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "keep");
     }
 }
