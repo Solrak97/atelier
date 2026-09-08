@@ -29,7 +29,7 @@ impl DocumentId {
 }
 
 /// A UTF-8 byte offset into a document.
-#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ByteOffset(usize);
 
 impl ByteOffset {
@@ -49,7 +49,7 @@ impl From<usize> for ByteOffset {
 }
 
 /// A half-open UTF-8 byte range.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct ByteRange {
     pub start: ByteOffset,
     pub end: ByteOffset,
@@ -62,6 +62,14 @@ impl ByteRange {
 
     pub const fn is_empty(self) -> bool {
         self.start.0 == self.end.0
+    }
+
+    pub const fn contains_range(self, other: Self) -> bool {
+        self.start.0 <= other.start.0 && other.end.0 <= self.end.0
+    }
+
+    pub const fn len(self) -> usize {
+        self.end.0.saturating_sub(self.start.0)
     }
 }
 

@@ -9,6 +9,7 @@ use gpui::{
     relative, rgb, rgba, size,
 };
 
+use crate::analysis::SyntaxSession;
 use crate::languages::{HighlightKind, HighlightSpan, LanguageExtension, registry};
 use crate::scrollbar::VerticalScroll;
 
@@ -63,6 +64,7 @@ pub struct EditorView {
     cached_lines: Vec<CachedLine>,
     is_selecting: bool,
     language: Option<&'static dyn LanguageExtension>,
+    analysis: Option<SyntaxSession>,
     highlighted_revision: Option<Revision>,
     highlight_spans: Vec<HighlightSpan>,
     save_error: Option<String>,
@@ -74,6 +76,7 @@ impl EditorView {
         let language = document
             .path()
             .and_then(|path| registry().extension_for_path(path));
+        let analysis = language.and_then(|language| language.analysis_session().ok());
         Self {
             editor: Editor::new(document),
             focus_handle: cx.focus_handle(),
@@ -81,6 +84,7 @@ impl EditorView {
             cached_lines: Vec::new(),
             is_selecting: false,
             language,
+            analysis,
             highlighted_revision: None,
             highlight_spans: Vec::new(),
             save_error: None,
@@ -478,6 +482,9 @@ impl Render for EditorView {
                 .language
                 .and_then(|language| language.highlight(&self.content()).ok())
                 .unwrap_or_default();
+            if let Some(analysis) = &mut self.analysis {
+                let _ = analysis.sync(&self.editor.document().snapshot());
+            }
             self.highlighted_revision = Some(current_revision);
         }
         let path = self

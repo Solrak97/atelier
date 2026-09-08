@@ -38,6 +38,8 @@ Significant technical choices are recorded as architecture decisions:
   GPUI, Crop, and the boundaries for future parsing and language intelligence
 - [Application and project storage](docs/architecture/0002-application-and-project-storage.md)
   — XDG app directories, `.caduceus/` project files, and the welcome session
+- [Syntax analysis and in-file referencing](docs/architecture/0003-syntax-and-in-file-referencing.md)
+  — retained Tree-sitter trees and a language-agnostic per-file symbol graph
 
 ## Development
 
@@ -77,7 +79,8 @@ The project tree opens files into persistent tabs. The editor supports typing,
 newlines, horizontal and vertical movement, scrolling, selection, clipboard
 shortcuts, and `Ctrl+S` to save. Long files and the project tree show a
 vertical scrollbar that can be dragged or clicked. Closing a modified tab asks
-to save, discard, or cancel. Rust and TOML files receive Tree-sitter syntax
+to save, discard, or cancel. Rust and TOML files keep an incremental Tree-sitter
+syntax tree and an in-file definition/reference graph, and receive syntax
 highlighting through the first built-in language extensions.
 
 ## License
