@@ -10,6 +10,7 @@ use gpui::{
 };
 
 use crate::languages::{HighlightKind, HighlightSpan, LanguageExtension, registry};
+use crate::scrollbar::VerticalScroll;
 
 actions!(
     caduceus_editor,
@@ -65,6 +66,7 @@ pub struct EditorView {
     highlighted_revision: Option<Revision>,
     highlight_spans: Vec<HighlightSpan>,
     save_error: Option<String>,
+    scroll: VerticalScroll,
 }
 
 impl EditorView {
@@ -82,6 +84,7 @@ impl EditorView {
             highlighted_revision: None,
             highlight_spans: Vec::new(),
             save_error: None,
+            scroll: VerticalScroll::new(),
         }
     }
 
@@ -541,18 +544,25 @@ impl Render for EditorView {
             )
             .child(
                 div()
-                    .id("editor-surface")
+                    .relative()
                     .min_h_0()
                     .flex_1()
                     .w_full()
-                    .overflow_y_scroll()
-                    .overflow_x_hidden()
-                    .cursor(CursorStyle::IBeam)
-                    .text_size(px(15.0))
-                    .line_height(px(22.0))
-                    .child(EditorElement {
-                        editor: cx.entity(),
-                    }),
+                    .child(
+                        div()
+                            .id("editor-surface")
+                            .size_full()
+                            .overflow_y_scroll()
+                            .overflow_x_hidden()
+                            .track_scroll(self.scroll.handle())
+                            .cursor(CursorStyle::IBeam)
+                            .text_size(px(15.0))
+                            .line_height(px(22.0))
+                            .child(EditorElement {
+                                editor: cx.entity(),
+                            }),
+                    )
+                    .child(self.scroll.bar("editor-scrollbar", cx)),
             )
             .child(
                 div()

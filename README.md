@@ -75,9 +75,10 @@ discard, or cancel.
 
 The project tree opens files into persistent tabs. The editor supports typing,
 newlines, horizontal and vertical movement, scrolling, selection, clipboard
-shortcuts, and `Ctrl+S` to save. Closing a modified tab asks to save, discard,
-or cancel. Rust and TOML files receive Tree-sitter syntax highlighting through
-the first built-in language extensions.
+shortcuts, and `Ctrl+S` to save. Long files and the project tree show a
+vertical scrollbar that can be dragged or clicked. Closing a modified tab asks
+to save, discard, or cancel. Rust and TOML files receive Tree-sitter syntax
+highlighting through the first built-in language extensions.
 
 ## License
 
