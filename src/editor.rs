@@ -1,6 +1,8 @@
 use std::{io, ops::Range};
 
-use atelier_core::{ByteOffset, Document, Editor, Revision};
+use atelier_core::{
+    ByteOffset, ByteRange, DefinitionLookup, Document, Editor, ReferenceLookup, Revision,
+};
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
     Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId, Hsla, KeyBinding,
@@ -32,6 +34,9 @@ actions!(
         Cut,
         Paste,
         Save,
+        GoToDefinition,
+        FindReferences,
+        GoBack,
     ]
 );
 
@@ -54,6 +59,9 @@ pub fn register_key_bindings(cx: &mut App) {
         KeyBinding::new("ctrl-v", Paste, Some("Editor")),
         KeyBinding::new("ctrl-s", Save, Some("Editor")),
         KeyBinding::new("ctrl-s", Save, Some("Workspace")),
+        KeyBinding::new("f12", GoToDefinition, Some("Editor")),
+        KeyBinding::new("shift-f12", FindReferences, Some("Editor")),
+        KeyBinding::new("alt-left", GoBack, Some("Editor")),
     ]);
 }
 
@@ -68,6 +76,8 @@ pub struct EditorView {
     highlighted_revision: Option<Revision>,
     highlight_spans: Vec<HighlightSpan>,
     save_error: Option<String>,
+    navigation_message: Option<String>,
+    jump_stack: Vec<ByteOffset>,
     scroll: VerticalScroll,
 }
 
@@ -88,6 +98,8 @@ impl EditorView {
             highlighted_revision: None,
             highlight_spans: Vec::new(),
             save_error: None,
+            navigation_message: None,
+            jump_stack: Vec::new(),
             scroll: VerticalScroll::new(),
         }
     }
@@ -121,9 +133,96 @@ impl EditorView {
         let _ = self.save(cx);
     }
 
+    fn ensure_analysis(&mut self) {
+        if let Some(analysis) = &mut self.analysis {
+            let _ = analysis.sync(&self.editor.document().snapshot());
+        }
+    }
+
+    fn jump_to(&mut self, range: ByteRange, cx: &mut Context<Self>) {
+        let origin = self.editor.cursor();
+        if origin < range.start || origin > range.end {
+            self.jump_stack.push(origin);
+        }
+        self.editor
+            .set_selection(range.start, range.end)
+            .expect("symbol ranges must be valid document offsets");
+        self.navigation_message = None;
+        cx.notify();
+    }
+
+    fn set_navigation_message(&mut self, message: impl Into<String>, cx: &mut Context<Self>) {
+        self.navigation_message = Some(message.into());
+        cx.notify();
+    }
+
+    fn go_to_definition(&mut self, _: &GoToDefinition, _: &mut Window, cx: &mut Context<Self>) {
+        self.ensure_analysis();
+        let lookup = match &self.analysis {
+            Some(analysis) => analysis.symbols().go_to_definition(self.editor.cursor()),
+            None => {
+                self.set_navigation_message("No language analysis for this file", cx);
+                return;
+            }
+        };
+        match lookup {
+            DefinitionLookup::Found(range) => self.jump_to(range, cx),
+            DefinitionLookup::Unresolved(name) => {
+                self.set_navigation_message(format!("No definition for `{name}` in this file"), cx);
+            }
+            DefinitionLookup::Missing => {
+                self.set_navigation_message("No symbol at the caret", cx);
+            }
+        }
+    }
+
+    fn find_references(&mut self, _: &FindReferences, _: &mut Window, cx: &mut Context<Self>) {
+        self.ensure_analysis();
+        let lookup = match &self.analysis {
+            Some(analysis) => analysis.symbols().find_references(self.editor.cursor()),
+            None => {
+                self.set_navigation_message("No language analysis for this file", cx);
+                return;
+            }
+        };
+        match lookup {
+            ReferenceLookup::Found(ranges) => {
+                let cursor = self.editor.cursor();
+                let Some(next) = ReferenceLookup::Found(ranges.clone()).next_after(cursor) else {
+                    self.set_navigation_message("No references in this file", cx);
+                    return;
+                };
+                let index = ranges.iter().position(|range| *range == next).unwrap_or(0) + 1;
+                let total = ranges.len();
+                self.jump_to(next, cx);
+                self.navigation_message = Some(format!("Reference {index} of {total}"));
+                cx.notify();
+            }
+            ReferenceLookup::Unresolved(name) => {
+                self.set_navigation_message(format!("No definition for `{name}` in this file"), cx);
+            }
+            ReferenceLookup::Missing => {
+                self.set_navigation_message("No symbol at the caret", cx);
+            }
+        }
+    }
+
+    fn go_back(&mut self, _: &GoBack, _: &mut Window, cx: &mut Context<Self>) {
+        let Some(offset) = self.jump_stack.pop() else {
+            self.set_navigation_message("Nothing to go back to", cx);
+            return;
+        };
+        self.editor
+            .set_selection(offset, offset)
+            .expect("jump origin must remain valid");
+        self.navigation_message = None;
+        cx.notify();
+    }
+
     fn note_edit(&mut self, cx: &mut Context<Self>) {
         self.marked_range = None;
         self.save_error = None;
+        self.navigation_message = None;
         cx.notify();
     }
 
@@ -237,6 +336,14 @@ impl EditorView {
     ) {
         window.focus(&self.focus_handle, cx);
         let offset = self.offset_for_position(event.position);
+        if event.modifiers.control {
+            self.editor
+                .set_selection(offset, offset)
+                .expect("painted text offsets must be valid");
+            self.go_to_definition(&GoToDefinition, window, cx);
+            self.is_selecting = false;
+            return;
+        }
         let anchor = if event.modifiers.shift {
             self.editor.selection().anchor()
         } else {
@@ -498,8 +605,10 @@ impl Render for EditorView {
             .language
             .map(LanguageExtension::name)
             .unwrap_or("Plain text");
-        let (save_label, save_color) = if let Some(error) = &self.save_error {
+        let (status_label, status_color) = if let Some(error) = &self.save_error {
             (format!("Save failed: {error}"), rgb(0xe06c75))
+        } else if let Some(message) = &self.navigation_message {
+            (message.clone(), rgb(0x61afef))
         } else if self.is_modified() {
             ("Unsaved changes · Ctrl+S to save".to_owned(), rgb(0xd19a66))
         } else {
@@ -530,6 +639,9 @@ impl Render for EditorView {
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::save_action))
+            .on_action(cx.listener(Self::go_to_definition))
+            .on_action(cx.listener(Self::find_references))
+            .on_action(cx.listener(Self::go_back))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
@@ -582,8 +694,8 @@ impl Render for EditorView {
                     .border_color(rgb(0x2a2e35))
                     .bg(rgb(0x181b20))
                     .text_size(px(12.0))
-                    .text_color(save_color)
-                    .child(format!("{language_label} · {save_label}")),
+                    .text_color(status_color)
+                    .child(format!("{language_label} · {status_label}")),
             )
     }
 }

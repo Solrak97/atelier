@@ -81,7 +81,10 @@ shortcuts, and `Ctrl+S` to save. Long files and the project tree show a
 vertical scrollbar that can be dragged or clicked. Closing a modified tab asks
 to save, discard, or cancel. Rust and TOML files keep an incremental Tree-sitter
 syntax tree and an in-file definition/reference graph, and receive syntax
-highlighting through the first built-in language extensions.
+highlighting through the first built-in language extensions. `F12` jumps to a
+definition in the current file, `Shift+F12` cycles through its uses, and
+`Alt+Left` goes back. `Ctrl+click` also jumps. Unresolved names show a status
+message instead of leaving the file.
 
 ## License
 
