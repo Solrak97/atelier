@@ -6,4 +6,7 @@ publish = false
 
 [dependencies]
 crop = "=0.4.3"
+directories = "=6.0.0"
+serde = { version = "=1.0.229", features = ["derive"] }
 tempfile = "=3.27.0"
+toml = "=0.8.23"

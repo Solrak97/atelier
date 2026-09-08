@@ -7,6 +7,7 @@ use gpui::{
 };
 
 use crate::editor::{EditorView, Save};
+use crate::shell::{CloseProject, OpenFolder};
 
 pub struct WorkspaceView {
     project: Project,
@@ -70,7 +71,7 @@ impl WorkspaceView {
         editor
     }
 
-    fn open_file(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn open_file(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(index) = self
             .open_documents
             .iter()
@@ -186,6 +187,25 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    pub fn has_unsaved_changes(&self, cx: &App) -> bool {
+        self.open_documents
+            .iter()
+            .any(|document| document.editor.read(cx).is_modified())
+    }
+
+    pub fn save_all(&mut self, cx: &mut Context<Self>) -> std::io::Result<()> {
+        for index in 0..self.open_documents.len() {
+            self.save_document(index, cx)?;
+        }
+        Ok(())
+    }
+
+    pub fn active_focus_handle(&self, cx: &App) -> Option<gpui::FocusHandle> {
+        self.active_document
+            .and_then(|index| self.open_documents.get(index))
+            .map(|document| document.editor.focus_handle(cx))
+    }
+
     fn flattened_entries(&self) -> Vec<FlatEntry> {
         fn append(entries: &[ProjectEntry], depth: usize, output: &mut Vec<FlatEntry>) {
             for entry in entries {
@@ -203,6 +223,26 @@ impl WorkspaceView {
         append(self.project.entries(), 0, &mut entries);
         entries
     }
+}
+
+fn header_button(
+    label: &'static str,
+    on_click: impl Fn(&mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(label)
+        .h(px(22.0))
+        .px_2()
+        .flex()
+        .items_center()
+        .rounded_sm()
+        .cursor_pointer()
+        .hover(|style| style.bg(rgb(0x343a45)).text_color(rgb(0xf0f2f5)))
+        .child(label)
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_mouse_up(MouseButton::Left, move |_, window, cx| {
+            on_click(window, cx);
+        })
 }
 
 impl Render for WorkspaceView {
@@ -244,12 +284,24 @@ impl Render for WorkspaceView {
                             .flex_none()
                             .flex()
                             .items_center()
+                            .justify_between()
                             .px_3()
                             .border_b_1()
                             .border_color(rgb(0x2a2e35))
                             .text_size(px(12.0))
                             .text_color(rgb(0xaeb4bf))
-                            .child(root_name),
+                            .child(div().min_w_0().flex_1().overflow_hidden().child(root_name))
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap_1()
+                                    .child(header_button("Open", |window, cx| {
+                                        window.dispatch_action(Box::new(OpenFolder), cx);
+                                    }))
+                                    .child(header_button("Close", |window, cx| {
+                                        window.dispatch_action(Box::new(CloseProject), cx);
+                                    })),
+                            ),
                     )
                     .child(
                         div()
