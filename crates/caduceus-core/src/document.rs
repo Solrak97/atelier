@@ -137,6 +137,7 @@ pub struct Document {
     path: Option<PathBuf>,
     text: Rope,
     revision: Revision,
+    modified: bool,
 }
 
 impl Document {
@@ -146,6 +147,7 @@ impl Document {
             path: None,
             text: Rope::from(text.as_ref()),
             revision: Revision::default(),
+            modified: false,
         }
     }
 
@@ -157,8 +159,8 @@ impl Document {
     }
 
     pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
-        let path = path.as_ref();
-        let text = fs::read_to_string(path)?;
+        let path = fs::canonicalize(path)?;
+        let text = fs::read_to_string(&path)?;
         Ok(Self::with_path(path, text))
     }
 
@@ -172,6 +174,14 @@ impl Document {
 
     pub const fn revision(&self) -> Revision {
         self.revision
+    }
+
+    pub const fn is_modified(&self) -> bool {
+        self.modified
+    }
+
+    pub fn mark_saved(&mut self) {
+        self.modified = false;
     }
 
     pub fn len_bytes(&self) -> usize {
@@ -278,6 +288,7 @@ impl Document {
             path: self.path.clone(),
             text: self.text.clone(),
             revision: self.revision,
+            modified: self.modified,
         }
     }
 
@@ -295,6 +306,7 @@ impl Document {
 
         self.text.insert(offset.get(), text);
         self.revision.advance();
+        self.modified = true;
         Ok(self.revision)
     }
 
@@ -307,6 +319,7 @@ impl Document {
 
         self.text.delete(range.start.get()..range.end.get());
         self.revision.advance();
+        self.modified = true;
         Ok(self.revision)
     }
 
@@ -324,6 +337,7 @@ impl Document {
 
         self.text.replace(range.start.get()..range.end.get(), text);
         self.revision.advance();
+        self.modified = true;
         Ok(self.revision)
     }
 
@@ -368,6 +382,7 @@ pub struct DocumentSnapshot {
     path: Option<PathBuf>,
     text: Rope,
     revision: Revision,
+    modified: bool,
 }
 
 impl DocumentSnapshot {
@@ -381,6 +396,10 @@ impl DocumentSnapshot {
 
     pub const fn revision(&self) -> Revision {
         self.revision
+    }
+
+    pub const fn is_modified(&self) -> bool {
+        self.modified
     }
 
     pub fn len_bytes(&self) -> usize {
@@ -417,10 +436,12 @@ mod tests {
     fn edits_text_and_advances_revisions() {
         let mut document = Document::new("Hello world");
 
+        assert!(!document.is_modified());
         assert_eq!(
             document.insert(ByteOffset::new(5), ", brave"),
             Ok(Revision(1))
         );
+        assert!(document.is_modified());
         assert_eq!(document.text(), "Hello, brave world");
 
         assert_eq!(document.delete((5..12).into()), Ok(Revision(2)));
@@ -440,6 +461,20 @@ mod tests {
         assert_eq!(document.insert(0.into(), ""), Ok(Revision(0)));
         assert_eq!(document.delete((2..2).into()), Ok(Revision(0)));
         assert_eq!(document.replace((4..4).into(), ""), Ok(Revision(0)));
+        assert!(!document.is_modified());
+    }
+
+    #[test]
+    fn can_mark_a_modified_document_as_saved() {
+        let mut document = Document::new("before");
+        document
+            .insert(document.len_bytes().into(), " after")
+            .unwrap();
+
+        document.mark_saved();
+
+        assert!(!document.is_modified());
+        assert_eq!(document.revision(), Revision(1));
     }
 
     #[test]
@@ -499,8 +534,10 @@ mod tests {
 
         assert_eq!(snapshot.id(), document.id());
         assert_eq!(snapshot.revision(), Revision(0));
+        assert!(!snapshot.is_modified());
         assert_eq!(snapshot.text(), "before");
         assert_eq!(document.revision(), Revision(1));
+        assert!(document.is_modified());
         assert_eq!(document.text(), "after");
     }
 
