@@ -81,9 +81,11 @@ impl WorkspaceView {
 
         match Document::open(path) {
             Ok(document) => {
-                let editor = self.add_document(document, cx);
-                window.focus(&editor.focus_handle(cx));
+                self.add_document(document, cx);
                 self.message = None;
+                cx.defer_in(window, |workspace, window, cx| {
+                    workspace.focus_active(window, cx);
+                });
             }
             Err(error) => {
                 self.message = Some(format!("Could not open {}: {error}", path.display()));
@@ -95,9 +97,12 @@ impl WorkspaceView {
     fn activate_document(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(document) = self.open_documents.get(index) {
             self.active_document = Some(index);
-            window.focus(&document.editor.focus_handle(cx));
+            let editor = document.editor.clone();
             self.message = None;
             cx.notify();
+            cx.defer_in(window, move |_, window, cx| {
+                window.focus(&editor.focus_handle(cx));
+            });
         }
     }
 
@@ -286,5 +291,89 @@ impl Render for WorkspaceView {
                             }),
                     ),
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use gpui::TestAppContext;
+
+    use super::*;
+
+    struct TempWorkspace(PathBuf);
+
+    impl TempWorkspace {
+        fn new() -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "caduceus-workspace-{}-{unique}",
+                std::process::id()
+            ));
+            fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TempWorkspace {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    #[gpui::test]
+    fn opens_and_switches_files_without_reentrant_updates(cx: &mut TestAppContext) {
+        let temp = TempWorkspace::new();
+        let first = temp.0.join("first.txt");
+        let second = temp.0.join("second.txt");
+        fs::write(&first, "first").unwrap();
+        fs::write(&second, "second").unwrap();
+        let project = Project::open(&temp.0).unwrap();
+
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| {
+                cx.new(|cx| WorkspaceView::new(project, None, cx))
+            })
+            .unwrap()
+        });
+
+        window
+            .update(cx, |workspace, window, cx| {
+                workspace.open_file(&first, window, cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+
+        window
+            .update(cx, |workspace, window, cx| {
+                workspace.open_file(&second, window, cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+
+        window
+            .update(cx, |workspace, window, cx| {
+                workspace.activate_document(0, window, cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+
+        window
+            .update(cx, |workspace, _, _| {
+                assert_eq!(workspace.open_documents.len(), 2);
+                assert_eq!(workspace.active_document, Some(0));
+                assert_eq!(
+                    workspace.open_documents[0].path,
+                    fs::canonicalize(first).unwrap()
+                );
+            })
+            .unwrap();
     }
 }

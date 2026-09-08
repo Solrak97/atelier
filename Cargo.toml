@@ -11,3 +11,6 @@ resolver = "3"
 [dependencies]
 caduceus-core = { path = "crates/caduceus-core" }
 gpui = "=0.2.2"
+
+[dev-dependencies]
+gpui = { version = "=0.2.2", features = ["test-support"] }
