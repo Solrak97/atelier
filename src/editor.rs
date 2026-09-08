@@ -480,9 +480,11 @@ impl Render for EditorView {
             .child(
                 div()
                     .id("editor-surface")
+                    .min_h_0()
                     .flex_1()
                     .w_full()
-                    .overflow_hidden()
+                    .overflow_y_scroll()
+                    .overflow_x_hidden()
                     .cursor(CursorStyle::IBeam)
                     .text_size(px(15.0))
                     .line_height(px(22.0))
@@ -605,9 +607,13 @@ impl Element for EditorElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
+        let content = self.editor.read(cx).content();
+        let line_count = visual_lines(&content).len();
+        let line_height = window.line_height();
         let mut style = Style::default();
         style.size.width = relative(1.0).into();
-        style.size.height = relative(1.0).into();
+        style.size.height = (line_height * line_count as f32 + px(24.0)).into();
+        style.min_size.height = relative(1.0).into();
         (window.request_layout(style, [], cx), ())
     }
 
