@@ -81,11 +81,9 @@ impl WorkspaceView {
 
         match Document::open(path) {
             Ok(document) => {
-                self.add_document(document, cx);
+                let editor = self.add_document(document, cx);
                 self.message = None;
-                cx.defer_in(window, |workspace, window, cx| {
-                    workspace.focus_active(window, cx);
-                });
+                window.focus(&editor.focus_handle(cx), cx);
             }
             Err(error) => {
                 self.message = Some(format!("Could not open {}: {error}", path.display()));
@@ -97,13 +95,39 @@ impl WorkspaceView {
     fn activate_document(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(document) = self.open_documents.get(index) {
             self.active_document = Some(index);
-            let editor = document.editor.clone();
             self.message = None;
+            window.focus(&document.editor.focus_handle(cx), cx);
             cx.notify();
-            cx.defer_in(window, move |_, window, cx| {
-                window.focus(&editor.focus_handle(cx), cx);
-            });
         }
+    }
+
+    fn close_document(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(document) = self.open_documents.get(index) else {
+            return;
+        };
+        if document.editor.read(cx).is_modified() {
+            self.message = Some(format!(
+                "Could not close {}: the document has unsaved changes",
+                document.path.display()
+            ));
+            cx.notify();
+            return;
+        }
+
+        let closed_active_document = self.active_document == Some(index);
+        self.open_documents.remove(index);
+        self.active_document = match self.active_document {
+            None => None,
+            Some(_) if self.open_documents.is_empty() => None,
+            Some(active) if active > index => Some(active - 1),
+            Some(active) if active == index => Some(index.min(self.open_documents.len() - 1)),
+            Some(active) => Some(active),
+        };
+        self.message = None;
+        if closed_active_document {
+            self.focus_active(window, cx);
+        }
+        cx.notify();
     }
 
     fn flattened_entries(&self) -> Vec<FlatEntry> {
@@ -262,7 +286,49 @@ impl Render for WorkspaceView {
                                             rgb(0x15181d)
                                         })
                                         .text_size(px(12.0))
-                                        .child(name)
+                                        .child(
+                                            div()
+                                                .min_w_0()
+                                                .flex_1()
+                                                .overflow_hidden()
+                                                .child(name),
+                                        )
+                                        .child(
+                                            div()
+                                                .id(("close-tab", index))
+                                                .ml_2()
+                                                .size(px(20.0))
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .rounded_sm()
+                                                .text_size(px(15.0))
+                                                .text_color(rgb(0x8f96a3))
+                                                .hover(|style| {
+                                                    style
+                                                        .bg(rgb(0x343a45))
+                                                        .text_color(rgb(0xf0f2f5))
+                                                })
+                                                .on_mouse_down(
+                                                    MouseButton::Left,
+                                                    |_, _, cx| cx.stop_propagation(),
+                                                )
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(
+                                                        move |workspace,
+                                                              _: &MouseUpEvent,
+                                                              window,
+                                                              cx| {
+                                                            cx.stop_propagation();
+                                                            workspace.close_document(
+                                                                index, window, cx,
+                                                            );
+                                                        },
+                                                    ),
+                                                )
+                                                .child("×"),
+                                        )
                                         .cursor_pointer()
                                         .hover(|style| style.bg(rgb(0x242932)))
                                         .on_mouse_up(
@@ -329,12 +395,14 @@ mod tests {
     }
 
     #[gpui::test]
-    fn opens_and_switches_files_without_reentrant_updates(cx: &mut TestAppContext) {
+    fn opens_switches_and_closes_files_without_reentrant_updates(cx: &mut TestAppContext) {
         let temp = TempWorkspace::new();
         let first = temp.0.join("first.txt");
         let second = temp.0.join("second.txt");
+        let third = temp.0.join("third.txt");
         fs::write(&first, "first").unwrap();
         fs::write(&second, "second").unwrap();
+        fs::write(&third, "third").unwrap();
         let project = Project::open(&temp.0).unwrap();
 
         let window = cx.update(|cx| {
@@ -360,7 +428,14 @@ mod tests {
 
         window
             .update(cx, |workspace, window, cx| {
-                workspace.activate_document(0, window, cx);
+                workspace.open_file(&third, window, cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+
+        window
+            .update(cx, |workspace, window, cx| {
+                workspace.close_document(1, window, cx);
             })
             .unwrap();
         cx.run_until_parked();
@@ -368,10 +443,85 @@ mod tests {
         window
             .update(cx, |workspace, _, _| {
                 assert_eq!(workspace.open_documents.len(), 2);
+                assert_eq!(workspace.active_document, Some(1));
+                assert_eq!(
+                    workspace.open_documents[1].path,
+                    fs::canonicalize(&third).unwrap()
+                );
+            })
+            .unwrap();
+
+        window
+            .update(cx, |workspace, window, cx| {
+                workspace.activate_document(0, window, cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+
+        window
+            .update(cx, |workspace, window, cx| {
+                workspace.close_document(0, window, cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+
+        window
+            .update(cx, |workspace, window, cx| {
+                assert_eq!(workspace.open_documents.len(), 1);
                 assert_eq!(workspace.active_document, Some(0));
                 assert_eq!(
                     workspace.open_documents[0].path,
-                    fs::canonicalize(first).unwrap()
+                    fs::canonicalize(&third).unwrap()
+                );
+                workspace.close_document(0, window, cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+
+        window
+            .update(cx, |workspace, _, _| {
+                assert!(workspace.open_documents.is_empty());
+                assert_eq!(workspace.active_document, None);
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn refuses_to_close_a_document_with_unsaved_changes(cx: &mut TestAppContext) {
+        let temp = TempWorkspace::new();
+        let file = temp.0.join("modified.txt");
+        fs::write(&file, "original").unwrap();
+        let project = Project::open(&temp.0).unwrap();
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| {
+                cx.new(|cx| WorkspaceView::new(project, None, cx))
+            })
+            .unwrap()
+        });
+
+        window
+            .update(cx, |workspace, window, cx| {
+                workspace.open_file(&file, window, cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+        cx.simulate_input(window.into(), "x");
+
+        window
+            .update(cx, |workspace, window, cx| {
+                workspace.close_document(0, window, cx);
+            })
+            .unwrap();
+
+        window
+            .update(cx, |workspace, _, _| {
+                assert_eq!(workspace.open_documents.len(), 1);
+                assert_eq!(workspace.active_document, Some(0));
+                assert!(
+                    workspace
+                        .message
+                        .as_deref()
+                        .is_some_and(|message| message.contains("unsaved changes"))
                 );
             })
             .unwrap();
