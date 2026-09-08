@@ -68,6 +68,10 @@ impl ByteRange {
         self.start.0 <= other.start.0 && other.end.0 <= self.end.0
     }
 
+    pub const fn contains_offset(self, offset: ByteOffset) -> bool {
+        self.start.0 <= offset.0 && offset.0 <= self.end.0
+    }
+
     pub const fn len(self) -> usize {
         self.end.0.saturating_sub(self.start.0)
     }
@@ -493,10 +497,7 @@ mod tests {
         assert_eq!(document.delete((5..12).into()), Ok(Revision(2)));
         assert_eq!(document.text(), "Hello world");
 
-        assert_eq!(
-            document.replace((6..11).into(), "Atelier"),
-            Ok(Revision(3))
-        );
+        assert_eq!(document.replace((6..11).into(), "Atelier"), Ok(Revision(3)));
         assert_eq!(document.text(), "Hello Atelier");
     }
 

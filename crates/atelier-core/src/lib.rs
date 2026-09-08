@@ -19,7 +19,7 @@ pub use paths::AppPaths;
 pub use project::{PROJECT_METADATA_DIR, Project, ProjectEntry, ProjectEntryKind};
 pub use registry::{ProjectRegistry, RecentProject};
 pub use symbols::{
-    Definition, DefinitionId, DuplicateDefinitions, Reference, SymbolGraph, SymbolKind, SymbolRole,
-    SymbolTag,
+    Definition, DefinitionId, DefinitionLookup, DuplicateDefinitions, Reference, ReferenceLookup,
+    SymbolGraph, SymbolKind, SymbolRole, SymbolTag,
 };
 pub use syntax::{SyntaxNode, SyntaxTree};

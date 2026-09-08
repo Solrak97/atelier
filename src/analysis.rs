@@ -73,7 +73,6 @@ impl SyntaxSession {
         self.syntax.as_ref()
     }
 
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn symbols(&self) -> &SymbolGraph {
         &self.symbols
     }
@@ -222,7 +221,7 @@ fn point_at(source: &str, byte: usize) -> Point {
 
 #[cfg(test)]
 mod tests {
-    use atelier_core::{Document, SymbolKind};
+    use atelier_core::{DefinitionLookup, Document, ReferenceLookup, SymbolKind};
 
     use super::*;
     use crate::languages::registry;
@@ -311,5 +310,51 @@ mod tests {
                 .map(|def| def.kind()),
             Some(SymbolKind::Constant)
         );
+    }
+
+    #[test]
+    fn rust_go_to_definition_from_a_call_site() {
+        let source = "fn greet() {}\nfn main() {\n    greet();\n    greet();\n}\n";
+        let (_document, session) = session_for("main.rs", source);
+        let symbols = session.symbols();
+        let greet = symbols.definitions_named("greet").next().unwrap();
+        let call = symbols.references_to(greet.id()).next().unwrap();
+
+        assert_eq!(
+            symbols.go_to_definition(call.name_range().start),
+            DefinitionLookup::Found(greet.name_range())
+        );
+    }
+
+    #[test]
+    fn rust_find_references_visits_definition_and_uses() {
+        let source = "fn greet() {}\nfn main() {\n    greet();\n    greet();\n}\n";
+        let (_document, session) = session_for("main.rs", source);
+        let symbols = session.symbols();
+        let greet = symbols.definitions_named("greet").next().unwrap();
+        let lookup = symbols.find_references(greet.name_range().start);
+        let ReferenceLookup::Found(ranges) = lookup else {
+            panic!("expected bound references");
+        };
+
+        assert_eq!(ranges.len(), 3);
+        assert_eq!(ranges[0], greet.name_range());
+        assert_eq!(
+            ReferenceLookup::Found(ranges.clone()).next_after(greet.name_range().start),
+            Some(ranges[1])
+        );
+    }
+
+    #[test]
+    fn rust_unresolved_call_does_not_panic() {
+        let (_document, session) = session_for("main.rs", "fn main() { missing(); }\n");
+        let symbols = session.symbols();
+        let lookup = symbols.go_to_definition(symbols.references()[0].name_range().start);
+
+        assert!(matches!(lookup, DefinitionLookup::Unresolved(name) if name == "missing"));
+        assert!(matches!(
+            symbols.find_references(symbols.references()[0].name_range().start),
+            ReferenceLookup::Unresolved(_)
+        ));
     }
 }

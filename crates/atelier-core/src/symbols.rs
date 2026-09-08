@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ByteRange;
+use crate::{ByteOffset, ByteRange};
 
 /// Stable identity for a definition inside one document's symbol graph.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -200,6 +200,50 @@ impl DuplicateDefinitions {
     }
 }
 
+/// Result of asking for the definition under the caret.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DefinitionLookup {
+    Found(ByteRange),
+    Unresolved(String),
+    Missing,
+}
+
+/// Result of asking for in-file uses of the symbol under the caret.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReferenceLookup {
+    Found(Vec<ByteRange>),
+    Unresolved(String),
+    Missing,
+}
+
+impl ReferenceLookup {
+    pub fn next_after(&self, offset: ByteOffset) -> Option<ByteRange> {
+        let Self::Found(ranges) = self else {
+            return None;
+        };
+        if ranges.is_empty() {
+            return None;
+        }
+        if let Some(index) = ranges
+            .iter()
+            .position(|range| range.contains_offset(offset))
+        {
+            return Some(ranges[(index + 1) % ranges.len()]);
+        }
+        ranges
+            .iter()
+            .find(|range| range.start > offset)
+            .copied()
+            .or_else(|| ranges.first().copied())
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Hit {
+    Definition(DefinitionId),
+    Reference(usize),
+}
+
 /// In-file definitions, references, and duplicate-name groups.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SymbolGraph {
@@ -343,6 +387,107 @@ impl SymbolGraph {
             .iter()
             .filter(move |reference| reference.definition == Some(id))
     }
+
+    pub fn definition(&self, id: DefinitionId) -> Option<&Definition> {
+        self.definitions.get(id.get() as usize)
+    }
+
+    pub fn go_to_definition(&self, offset: ByteOffset) -> DefinitionLookup {
+        match self.hit(offset) {
+            None => DefinitionLookup::Missing,
+            Some(Hit::Definition(id)) => self
+                .definition(id)
+                .map(|definition| DefinitionLookup::Found(definition.name_range))
+                .unwrap_or(DefinitionLookup::Missing),
+            Some(Hit::Reference(index)) => match self.references[index].definition {
+                Some(id) => self
+                    .definition(id)
+                    .map(|definition| DefinitionLookup::Found(definition.name_range))
+                    .unwrap_or(DefinitionLookup::Missing),
+                None => DefinitionLookup::Unresolved(self.references[index].name.clone()),
+            },
+        }
+    }
+
+    pub fn find_references(&self, offset: ByteOffset) -> ReferenceLookup {
+        let id = match self.hit(offset) {
+            None => return ReferenceLookup::Missing,
+            Some(Hit::Definition(id)) => id,
+            Some(Hit::Reference(index)) => match self.references[index].definition {
+                Some(id) => id,
+                None => {
+                    return ReferenceLookup::Unresolved(self.references[index].name.clone());
+                }
+            },
+        };
+        let mut ranges: Vec<ByteRange> = Vec::new();
+        if let Some(definition) = self.definition(id) {
+            ranges.push(definition.name_range);
+        }
+        ranges.extend(self.references_to(id).map(Reference::name_range));
+        ranges.sort_by_key(|range| (range.start, range.end));
+        ranges.dedup();
+        ReferenceLookup::Found(ranges)
+    }
+
+    fn hit(&self, offset: ByteOffset) -> Option<Hit> {
+        let mut best: Option<(usize, bool, Hit)> = None;
+        for definition in &self.definitions {
+            consider_hit(
+                &mut best,
+                offset,
+                definition.name_range,
+                true,
+                Hit::Definition(definition.id),
+            );
+            consider_hit(
+                &mut best,
+                offset,
+                definition.range,
+                false,
+                Hit::Definition(definition.id),
+            );
+        }
+        for (index, reference) in self.references.iter().enumerate() {
+            consider_hit(
+                &mut best,
+                offset,
+                reference.name_range,
+                true,
+                Hit::Reference(index),
+            );
+            consider_hit(
+                &mut best,
+                offset,
+                reference.range,
+                false,
+                Hit::Reference(index),
+            );
+        }
+        best.map(|(_, _, hit)| hit)
+    }
+}
+
+fn consider_hit(
+    best: &mut Option<(usize, bool, Hit)>,
+    offset: ByteOffset,
+    range: ByteRange,
+    is_name: bool,
+    hit: Hit,
+) {
+    if !range.contains_offset(offset) {
+        return;
+    }
+    let length = range.len();
+    let replace = match best {
+        None => true,
+        Some((best_length, best_is_name, _)) => {
+            length < *best_length || (length == *best_length && is_name && !*best_is_name)
+        }
+    };
+    if replace {
+        *best = Some((length, is_name, hit));
+    }
 }
 
 fn kind_priority(kind: SymbolKind) -> u8 {
@@ -451,5 +596,78 @@ mod tests {
 
         assert_eq!(graph.definitions().len(), 1);
         assert_eq!(graph.definitions()[0].kind(), SymbolKind::Method);
+    }
+
+    fn greet_graph() -> SymbolGraph {
+        let file = range(0, 40);
+        SymbolGraph::from_tags([
+            SymbolTag::definition(
+                "greet",
+                SymbolKind::Function,
+                range(3, 8),
+                range(0, 12),
+                file,
+            ),
+            SymbolTag::reference(
+                "greet",
+                SymbolKind::Function,
+                range(20, 25),
+                range(20, 27),
+                file,
+            ),
+            SymbolTag::reference(
+                "greet",
+                SymbolKind::Function,
+                range(30, 35),
+                range(30, 37),
+                file,
+            ),
+        ])
+    }
+
+    #[test]
+    fn jumps_from_a_call_site_to_the_definition() {
+        let graph = greet_graph();
+        assert_eq!(
+            graph.go_to_definition(ByteOffset::new(21)),
+            DefinitionLookup::Found(range(3, 8))
+        );
+    }
+
+    #[test]
+    fn find_references_visits_the_definition_and_each_use() {
+        let graph = greet_graph();
+        let lookup = graph.find_references(ByteOffset::new(21));
+        assert_eq!(
+            lookup,
+            ReferenceLookup::Found(vec![range(3, 8), range(20, 25), range(30, 35)])
+        );
+        assert_eq!(lookup.next_after(ByteOffset::new(21)), Some(range(30, 35)));
+        assert_eq!(lookup.next_after(ByteOffset::new(32)), Some(range(3, 8)));
+    }
+
+    #[test]
+    fn unresolved_names_do_not_panic() {
+        let file = range(0, 20);
+        let graph = SymbolGraph::from_tags([SymbolTag::reference(
+            "missing",
+            SymbolKind::Function,
+            range(0, 7),
+            range(0, 9),
+            file,
+        )]);
+
+        assert_eq!(
+            graph.go_to_definition(ByteOffset::new(1)),
+            DefinitionLookup::Unresolved("missing".into())
+        );
+        assert_eq!(
+            graph.find_references(ByteOffset::new(1)),
+            ReferenceLookup::Unresolved("missing".into())
+        );
+        assert_eq!(
+            graph.go_to_definition(ByteOffset::new(19)),
+            DefinitionLookup::Missing
+        );
     }
 }
