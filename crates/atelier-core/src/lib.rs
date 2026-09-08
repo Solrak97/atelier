@@ -1,4 +1,4 @@
-//! UI-independent foundations for the Caduceus editor.
+//! UI-independent foundations for the Atelier editor.
 
 mod document;
 mod editor;

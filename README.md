@@ -1,10 +1,10 @@
-# Caduceus
+# Atelier
 
-Caduceus is an experiment in building a focused, native IDE around the features
+Atelier is an experiment in building a focused, native IDE around the features
 its author actually needs.
 
 Modern development increasingly happens through agents, but sometimes you still
-want to write and understand code yourself. Caduceus is a place for that:
+want to write and understand code yourself. Atelier is a place for that:
 keyboard-first, deliberate, and free of built-in AI features.
 
 Yes, it is being bootstrapped with AI in order to get away from AI. The irony is
@@ -26,9 +26,9 @@ The initial direction is:
 
 ## Status
 
-Caduceus is at the beginning of its journey. Design and technical decisions will
+Atelier is at the beginning of its journey. Design and technical decisions will
 be documented as they are made, and work will be tracked in the
-[Caduceus project](https://github.com/users/Solrak97/projects/8).
+[Atelier project](https://github.com/users/Solrak97/projects/8).
 
 ## Architecture
 
@@ -37,13 +37,13 @@ Significant technical choices are recorded as architecture decisions:
 - [Foundational stack](docs/architecture/0001-foundational-stack.md) — Rust,
   GPUI, Crop, and the boundaries for future parsing and language intelligence
 - [Application and project storage](docs/architecture/0002-application-and-project-storage.md)
-  — XDG app directories, `.caduceus/` project files, and the welcome session
+  — XDG app directories, `.atelier/` project files, and the welcome session
 - [Syntax analysis and in-file referencing](docs/architecture/0003-syntax-and-in-file-referencing.md)
   — retained Tree-sitter trees and a language-agnostic per-file symbol graph
 
 ## Development
 
-Caduceus currently targets Linux and requires the latest stable Rust toolchain.
+Atelier currently targets Linux and requires the latest stable Rust toolchain.
 GPUI also needs a C/C++ build toolchain, Fontconfig, XKB, and either Wayland or
 X11 development libraries.
 
@@ -60,7 +60,7 @@ Build and run the current application with:
 cargo run
 ```
 
-With no arguments, Caduceus opens a welcome screen. Open a folder from there,
+With no arguments, Atelier opens a welcome screen. Open a folder from there,
 or pass a directory or UTF-8 text file on the command line:
 
 ```sh
@@ -68,9 +68,9 @@ cargo run -- /path/to/project
 cargo run -- README.md
 ```
 
-Application files live in XDG user directories (`~/.config/caduceus`,
-`~/.local/share/caduceus`, `~/.cache/caduceus`). Opening a folder records it in
-the recent-project list and creates a `.caduceus/` directory inside that
+Application files live in XDG user directories (`~/.config/atelier`,
+`~/.local/share/atelier`, `~/.cache/atelier`). Opening a folder records it in
+the recent-project list and creates a `.atelier/` directory inside that
 project for later local state. `Ctrl+O` also opens a folder. Close Project on
 the sidebar returns to the welcome screen; unsaved files prompt to save,
 discard, or cancel.

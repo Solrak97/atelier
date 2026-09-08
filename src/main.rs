@@ -8,7 +8,7 @@ mod workspace;
 
 use std::{io, path::PathBuf};
 
-use caduceus_core::{AppPaths, Project, ProjectRegistry};
+use atelier_core::{AppPaths, Project, ProjectRegistry};
 use gpui::{App, Bounds, TitlebarOptions, WindowBounds, WindowOptions, prelude::*, px, size};
 use shell::AppShell;
 
@@ -22,14 +22,14 @@ fn load_registry(paths: &AppPaths) -> ProjectRegistry {
     }
 }
 
-fn initial_project() -> io::Result<Option<(Project, Option<caduceus_core::Document>)>> {
+fn initial_project() -> io::Result<Option<(Project, Option<atelier_core::Document>)>> {
     let Some(path) = std::env::args_os().nth(1).map(PathBuf::from) else {
         return Ok(None);
     };
     let (project, document) = Project::open_from_path(path)?;
     if let Err(error) = project.ensure_metadata_dir() {
         eprintln!(
-            "opened {}, but could not create .caduceus/: {error}",
+            "opened {}, but could not create .atelier/: {error}",
             project.root().display()
         );
     }
@@ -72,7 +72,7 @@ fn main() {
             .open_window(
                 WindowOptions {
                     titlebar: Some(TitlebarOptions {
-                        title: Some("Caduceus".into()),
+                        title: Some("Atelier".into()),
                         ..Default::default()
                     }),
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -80,7 +80,7 @@ fn main() {
                 },
                 move |_, cx| cx.new(|cx| AppShell::new(registry, initial, cx)),
             )
-            .expect("failed to open the Caduceus window");
+            .expect("failed to open the Atelier window");
 
         window
             .update(cx, |shell, window, cx| {

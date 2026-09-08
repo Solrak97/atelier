@@ -10,7 +10,7 @@ use crate::paths::AppPaths;
 
 const MAX_RECENT_PROJECTS: usize = 20;
 
-/// A folder previously opened as a Caduceus project.
+/// A folder previously opened as a Atelier project.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RecentProject {
     pub path: PathBuf,

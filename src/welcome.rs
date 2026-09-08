@@ -25,7 +25,7 @@ pub fn render(shell: &AppShell, cx: &mut Context<AppShell>) -> impl IntoElement 
                     div()
                         .text_size(px(28.0))
                         .text_color(rgb(0xf0f2f5))
-                        .child("Caduceus"),
+                        .child("Atelier"),
                 )
                 .child(
                     div()

@@ -5,7 +5,7 @@
 
 ## Context
 
-Caduceus started by treating the process working directory as the open project.
+Atelier started by treating the process working directory as the open project.
 That is enough for `cargo run` during bootstrapping, but not for an installed
 editor that must remember folders, keep its own configuration, and leave
 project-specific files inside the folder they belong to.
@@ -18,11 +18,11 @@ global roots.
 
 ### Application directories
 
-Caduceus uses the XDG Base Directory layout through the `directories` crate:
+Atelier uses the XDG Base Directory layout through the `directories` crate:
 
-- config: `~/.config/caduceus`
-- data: `~/.local/share/caduceus`
-- cache: `~/.cache/caduceus`
+- config: `~/.config/atelier`
+- data: `~/.local/share/atelier`
+- cache: `~/.cache/atelier`
 
 The three roots are created on first launch. This milestone only writes a
 recent-project registry to the data directory as `projects.toml`. Config and
@@ -32,9 +32,9 @@ Serde and TOML are introduced here as the persistence format, matching ADR 0001.
 
 ### Project directories
 
-Opening a folder as a project creates `.caduceus/` at the project root when it
+Opening a folder as a project creates `.atelier/` at the project root when it
 does not already exist. That directory is the home for future project-local
-state. The explorer hides `.caduceus` the same way it hides `.git` and
+state. The explorer hides `.atelier` the same way it hides `.git` and
 `target`.
 
 ### Launch and sessions
@@ -57,7 +57,7 @@ closing the window still quits.
 
 - **Files next to the binary:** convenient for a zip-distributed portable
   build, but unusable for a system install and easy to lose on upgrade.
-- **All state inside `.caduceus/`:** cannot remember projects the user has not
+- **All state inside `.atelier/`:** cannot remember projects the user has not
   opened in this session, and cannot store app-wide preferences.
 - **SQLite registry:** stronger for later querying, but heavier than a small
   TOML list at this stage.

@@ -1,4 +1,4 @@
-use caduceus_core::{
+use atelier_core::{
     ByteRange, DocumentSnapshot, Revision, SymbolGraph, SymbolKind, SymbolTag, SyntaxNode,
     SyntaxTree,
 };
@@ -222,7 +222,7 @@ fn point_at(source: &str, byte: usize) -> Point {
 
 #[cfg(test)]
 mod tests {
-    use caduceus_core::{Document, SymbolKind};
+    use atelier_core::{Document, SymbolKind};
 
     use super::*;
     use crate::languages::registry;
@@ -296,7 +296,7 @@ mod tests {
 
     #[test]
     fn toml_tree_and_key_definitions() {
-        let source = "[package]\nname = \"caduceus\"\n";
+        let source = "[package]\nname = \"atelier\"\n";
         let (_document, session) = session_for("Cargo.toml", source);
         let syntax = session.syntax().expect("toml tree");
         let symbols = session.symbols();

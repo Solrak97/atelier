@@ -5,7 +5,7 @@
 
 ## Context
 
-Caduceus is intended to be a focused, native IDE that grows through small,
+Atelier is intended to be a focused, native IDE that grows through small,
 usable milestones. Its foundation should provide responsive text rendering and
 desktop integration without tying the editor's document model and behavior to a
 particular UI framework.
@@ -19,7 +19,7 @@ speculatively.
 
 ### Language
 
-Caduceus will use stable Rust and the Rust 2024 edition. A newer stable toolchain
+Atelier will use stable Rust and the Rust 2024 edition. A newer stable toolchain
 may be required when an adopted dependency requires it.
 
 ### User interface
@@ -28,10 +28,10 @@ may be required when an adopted dependency requires it.
 the native application and rendering layer. It is GPU accelerated, supports the
 major desktop platforms, and has been exercised by a production code editor.
 
-GPUI is pre-1.0 and can make breaking changes. Caduceus will pin it deliberately
+GPUI is pre-1.0 and can make breaking changes. Atelier will pin it deliberately
 and update it as an explicit maintenance task. Framework-specific entities,
 views, and tasks will stay in the UI layer; document state, editor commands, and
-workspace behavior will use Caduceus-owned types.
+workspace behavior will use Atelier-owned types.
 
 Linux is the first supported platform. The architecture should preserve a path
 to macOS and Windows without requiring feature parity during early development.
@@ -42,7 +42,7 @@ to macOS and Windows without requiring feature parity during early development.
 byte indexing aligns with Rust strings and Tree-sitter ranges while providing
 efficient edits and snapshots.
 
-Caduceus will define its own position and range types at subsystem boundaries.
+Atelier will define its own position and range types at subsystem boundaries.
 Conversions between UTF-8 byte offsets, display positions, and LSP UTF-16
 positions must be explicit and tested. No subsystem should silently assume that
 these coordinate systems are interchangeable.

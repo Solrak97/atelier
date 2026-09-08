@@ -187,10 +187,10 @@ mod tests {
         let mut editor = Editor::new(Document::new("hello world"));
 
         editor.set_selection(6.into(), 11.into()).unwrap();
-        editor.insert("Caduceus").unwrap();
+        editor.insert("Atelier").unwrap();
 
-        assert_eq!(editor.document().text(), "hello Caduceus");
-        assert_eq!(editor.cursor(), ByteOffset::new(14));
+        assert_eq!(editor.document().text(), "hello Atelier");
+        assert_eq!(editor.cursor(), ByteOffset::new(13));
         assert!(editor.selection().is_empty());
     }
 
