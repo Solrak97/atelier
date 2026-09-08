@@ -17,8 +17,12 @@ actions!(
         Enter,
         Left,
         Right,
+        Up,
+        Down,
         SelectLeft,
         SelectRight,
+        SelectUp,
+        SelectDown,
         SelectAll,
         Copy,
         Cut,
@@ -33,8 +37,12 @@ pub fn register_key_bindings(cx: &mut App) {
         KeyBinding::new("enter", Enter, Some("Editor")),
         KeyBinding::new("left", Left, Some("Editor")),
         KeyBinding::new("right", Right, Some("Editor")),
+        KeyBinding::new("up", Up, Some("Editor")),
+        KeyBinding::new("down", Down, Some("Editor")),
         KeyBinding::new("shift-left", SelectLeft, Some("Editor")),
         KeyBinding::new("shift-right", SelectRight, Some("Editor")),
+        KeyBinding::new("shift-up", SelectUp, Some("Editor")),
+        KeyBinding::new("shift-down", SelectDown, Some("Editor")),
         KeyBinding::new("ctrl-a", SelectAll, Some("Editor")),
         KeyBinding::new("ctrl-c", Copy, Some("Editor")),
         KeyBinding::new("ctrl-x", Cut, Some("Editor")),
@@ -97,6 +105,18 @@ impl EditorView {
         cx.notify();
     }
 
+    fn up(&mut self, _: &Up, _: &mut Window, cx: &mut Context<Self>) {
+        self.editor.move_up(false);
+        self.marked_range = None;
+        cx.notify();
+    }
+
+    fn down(&mut self, _: &Down, _: &mut Window, cx: &mut Context<Self>) {
+        self.editor.move_down(false);
+        self.marked_range = None;
+        cx.notify();
+    }
+
     fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
         self.editor.move_left(true);
         self.marked_range = None;
@@ -105,6 +125,18 @@ impl EditorView {
 
     fn select_right(&mut self, _: &SelectRight, _: &mut Window, cx: &mut Context<Self>) {
         self.editor.move_right(true);
+        self.marked_range = None;
+        cx.notify();
+    }
+
+    fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
+        self.editor.move_up(true);
+        self.marked_range = None;
+        cx.notify();
+    }
+
+    fn select_down(&mut self, _: &SelectDown, _: &mut Window, cx: &mut Context<Self>) {
+        self.editor.move_down(true);
         self.marked_range = None;
         cx.notify();
     }
@@ -412,8 +444,12 @@ impl Render for EditorView {
             .on_action(cx.listener(Self::enter))
             .on_action(cx.listener(Self::left))
             .on_action(cx.listener(Self::right))
+            .on_action(cx.listener(Self::up))
+            .on_action(cx.listener(Self::down))
             .on_action(cx.listener(Self::select_left))
             .on_action(cx.listener(Self::select_right))
+            .on_action(cx.listener(Self::select_up))
+            .on_action(cx.listener(Self::select_down))
             .on_action(cx.listener(Self::select_all))
             .on_action(cx.listener(Self::copy))
             .on_action(cx.listener(Self::cut))

@@ -230,6 +230,48 @@ impl Document {
             .unwrap_or_else(|| self.len_bytes().into())
     }
 
+    pub(crate) fn line_index_at(&self, offset: ByteOffset) -> usize {
+        debug_assert!(self.validate_offset(offset).is_ok());
+        self.text.line_of_byte(offset.get())
+    }
+
+    pub(crate) fn last_line_index(&self) -> usize {
+        self.text.line_of_byte(self.len_bytes())
+    }
+
+    pub(crate) fn char_column_at(&self, offset: ByteOffset) -> usize {
+        debug_assert!(self.validate_offset(offset).is_ok());
+        let line_start = self.text.byte_of_line(self.line_index_at(offset));
+        self.text
+            .byte_slice(line_start..offset.get())
+            .chars()
+            .count()
+    }
+
+    pub(crate) fn offset_for_line_column(
+        &self,
+        line_index: usize,
+        char_column: usize,
+    ) -> Option<ByteOffset> {
+        if line_index > self.last_line_index() {
+            return None;
+        }
+
+        let line_start = self.text.byte_of_line(line_index);
+        if line_start == self.len_bytes() {
+            return Some(line_start.into());
+        }
+
+        let byte_column = self
+            .text
+            .line(line_index)
+            .chars()
+            .take(char_column)
+            .map(char::len_utf8)
+            .sum::<usize>();
+        Some((line_start + byte_column).into())
+    }
+
     pub fn snapshot(&self) -> DocumentSnapshot {
         DocumentSnapshot {
             id: self.id,

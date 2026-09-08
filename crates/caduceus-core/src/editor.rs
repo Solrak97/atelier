@@ -37,6 +37,7 @@ impl Selection {
 pub struct Editor {
     document: Document,
     selection: Selection,
+    preferred_column: Option<usize>,
 }
 
 impl Editor {
@@ -44,6 +45,7 @@ impl Editor {
         Self {
             document,
             selection: Selection::default(),
+            preferred_column: None,
         }
     }
 
@@ -63,6 +65,7 @@ impl Editor {
         self.document.validate_offset(anchor)?;
         self.document.validate_offset(head)?;
         self.selection = Selection::new(anchor, head);
+        self.preferred_column = None;
         Ok(())
     }
 
@@ -84,8 +87,25 @@ impl Editor {
         self.move_to(target, extend);
     }
 
+    pub fn move_up(&mut self, extend: bool) {
+        let current_line = self.document.line_index_at(self.cursor());
+        if current_line == 0 {
+            return;
+        }
+        self.move_vertically(current_line - 1, extend);
+    }
+
+    pub fn move_down(&mut self, extend: bool) {
+        let current_line = self.document.line_index_at(self.cursor());
+        if current_line >= self.document.last_line_index() {
+            return;
+        }
+        self.move_vertically(current_line + 1, extend);
+    }
+
     pub fn select_all(&mut self) {
         self.selection = Selection::new(0.into(), self.document.len_bytes().into());
+        self.preferred_column = None;
     }
 
     pub fn insert(&mut self, text: impl AsRef<str>) -> Result<Revision, EditError> {
@@ -114,6 +134,7 @@ impl Editor {
         let revision = self.document.replace(range, text)?;
         let cursor = ByteOffset::new(range.start.get() + text.len());
         self.selection = Selection::new(cursor, cursor);
+        self.preferred_column = None;
         Ok(revision)
     }
 
@@ -123,6 +144,23 @@ impl Editor {
         } else {
             Selection::new(target, target)
         };
+        self.preferred_column = None;
+    }
+
+    fn move_vertically(&mut self, target_line: usize, extend: bool) {
+        let column = self
+            .preferred_column
+            .unwrap_or_else(|| self.document.char_column_at(self.cursor()));
+        let target = self
+            .document
+            .offset_for_line_column(target_line, column)
+            .expect("target line must exist");
+        self.selection = if extend {
+            Selection::new(self.selection.anchor(), target)
+        } else {
+            Selection::new(target, target)
+        };
+        self.preferred_column = Some(column);
     }
 
     fn previous_boundary(&self, offset: ByteOffset) -> ByteOffset {
@@ -203,5 +241,30 @@ mod tests {
 
         editor.move_left(false);
         assert_eq!(editor.cursor(), ByteOffset::new(3));
+    }
+
+    #[test]
+    fn moves_vertically_and_preserves_the_preferred_column() {
+        let mut editor = Editor::new(Document::new("abcdef\nx\nuvwxyz"));
+        editor.set_selection(5.into(), 5.into()).unwrap();
+
+        editor.move_down(false);
+        assert_eq!(editor.cursor(), ByteOffset::new(8));
+
+        editor.move_down(false);
+        assert_eq!(editor.cursor(), ByteOffset::new(14));
+
+        editor.move_up(false);
+        assert_eq!(editor.cursor(), ByteOffset::new(8));
+    }
+
+    #[test]
+    fn extends_a_selection_vertically_across_unicode() {
+        let mut editor = Editor::new(Document::new("aé日\nxyz"));
+        editor.set_selection(3.into(), 3.into()).unwrap();
+
+        editor.move_down(true);
+
+        assert_eq!(editor.selection(), Selection::new(3.into(), 9.into()));
     }
 }
