@@ -157,8 +157,8 @@ impl Document {
     }
 
     pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
-        let path = path.as_ref();
-        let text = fs::read_to_string(path)?;
+        let path = fs::canonicalize(path)?;
+        let text = fs::read_to_string(&path)?;
         Ok(Self::with_path(path, text))
     }
 

@@ -56,14 +56,18 @@ Build and run the current application with:
 cargo run
 ```
 
-Pass a UTF-8 text file to open it in the editor:
+By default, Caduceus opens the current directory as a project. Pass another
+directory to explore it, or pass a UTF-8 text file to open its parent project
+with that file active:
 
 ```sh
+cargo run -- /path/to/project
 cargo run -- README.md
 ```
 
-The current editor supports typing, newlines, deletion, selection, and clipboard
-shortcuts. Changes remain in memory until file saving is implemented.
+The project tree opens files into persistent tabs. The editor supports typing,
+newlines, horizontal and vertical movement, selection, and clipboard shortcuts.
+Changes remain in memory until file saving is implemented.
 
 ## License
 
