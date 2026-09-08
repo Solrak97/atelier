@@ -3,6 +3,8 @@ use std::{path::Path, sync::OnceLock};
 use tree_sitter::Query;
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
+use atelier_core::{LanguageAddon, LanguageEditRules};
+
 use crate::analysis::SyntaxSession;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,9 +32,8 @@ pub(crate) struct HighlightSpan {
     pub(crate) kind: HighlightKind,
 }
 
-pub(crate) trait LanguageExtension: Send + Sync {
+pub(crate) trait LanguageExtension: LanguageAddon + Send + Sync {
     fn name(&self) -> &'static str;
-    fn matches_path(&self, path: &Path) -> bool;
     fn highlight(&self, source: &str) -> Result<Vec<HighlightSpan>, String>;
     fn analysis_session(&self) -> Result<SyntaxSession, String>;
 }
@@ -79,8 +80,8 @@ impl TreeSitterLanguageExtension {
     }
 }
 
-impl LanguageExtension for TreeSitterLanguageExtension {
-    fn name(&self) -> &'static str {
+impl LanguageAddon for TreeSitterLanguageExtension {
+    fn id(&self) -> &'static str {
         self.name
     }
 
@@ -92,6 +93,20 @@ impl LanguageExtension for TreeSitterLanguageExtension {
                     .iter()
                     .any(|candidate| extension.eq_ignore_ascii_case(candidate))
             })
+    }
+
+    fn edit_rules(&self) -> LanguageEditRules {
+        match self.name {
+            "Rust" => LanguageEditRules::new(Some("//"), LanguageEditRules::DEFAULT_PAIRS),
+            "TOML" => LanguageEditRules::new(Some("#"), LanguageEditRules::DEFAULT_PAIRS),
+            _ => LanguageEditRules::default(),
+        }
+    }
+}
+
+impl LanguageExtension for TreeSitterLanguageExtension {
+    fn name(&self) -> &'static str {
+        self.name
     }
 
     fn highlight(&self, source: &str) -> Result<Vec<HighlightSpan>, String> {

@@ -1,5 +1,33 @@
 use crate::{ByteRange, Revision};
 
+/// Why a syntax range failed to parse.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ParseErrorKind {
+    Error,
+    Missing,
+}
+
+/// A Tree-sitter error or missing node, as a UTF-8 byte range.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ParseError {
+    range: ByteRange,
+    kind: ParseErrorKind,
+}
+
+impl ParseError {
+    pub const fn new(range: ByteRange, kind: ParseErrorKind) -> Self {
+        Self { range, kind }
+    }
+
+    pub const fn range(self) -> ByteRange {
+        self.range
+    }
+
+    pub const fn kind(self) -> ParseErrorKind {
+        self.kind
+    }
+}
+
 /// A language-agnostic named syntax node with UTF-8 byte ranges.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SyntaxNode {
@@ -50,11 +78,20 @@ impl SyntaxNode {
 pub struct SyntaxTree {
     revision: Revision,
     root: SyntaxNode,
+    errors: Vec<ParseError>,
 }
 
 impl SyntaxTree {
     pub fn new(revision: Revision, root: SyntaxNode) -> Self {
-        Self { revision, root }
+        Self::with_errors(revision, root, Vec::new())
+    }
+
+    pub fn with_errors(revision: Revision, root: SyntaxNode, errors: Vec<ParseError>) -> Self {
+        Self {
+            revision,
+            root,
+            errors,
+        }
     }
 
     pub const fn revision(&self) -> Revision {
@@ -63,6 +100,10 @@ impl SyntaxTree {
 
     pub const fn root(&self) -> &SyntaxNode {
         &self.root
+    }
+
+    pub fn errors(&self) -> &[ParseError] {
+        &self.errors
     }
 }
 
@@ -90,5 +131,19 @@ mod tests {
             Some("identifier")
         );
         assert_eq!(tree.root().named_node_count(), 2);
+        assert!(tree.errors().is_empty());
+    }
+
+    #[test]
+    fn stores_parse_error_ranges() {
+        let tree = SyntaxTree::with_errors(
+            Revision::default(),
+            SyntaxNode::new("source_file", range(0, 8), Vec::new()),
+            vec![ParseError::new(range(3, 5), ParseErrorKind::Error)],
+        );
+
+        assert_eq!(tree.errors().len(), 1);
+        assert_eq!(tree.errors()[0].kind(), ParseErrorKind::Error);
+        assert_eq!(tree.errors()[0].range(), range(3, 5));
     }
 }

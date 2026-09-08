@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Atelier
+Comment=A focused native IDE without built-in AI
+Exec=atelier %F
+Icon=atelier
+Terminal=false
+StartupNotify=true
+StartupWMClass=atelier
+Categories=Development;IDE;TextEditor;
+MimeType=inode/directory;text/plain;
+Keywords=editor;ide;code;
