@@ -194,6 +194,42 @@ impl Document {
         (index < self.len_lines()).then(|| self.text.line(index).to_string())
     }
 
+    pub(crate) fn previous_char_boundary(&self, offset: ByteOffset) -> ByteOffset {
+        debug_assert!(self.validate_offset(offset).is_ok());
+
+        if offset.get() >= 2
+            && self.text.byte(offset.get() - 2) == b'\r'
+            && self.text.byte(offset.get() - 1) == b'\n'
+        {
+            return (offset.get() - 2).into();
+        }
+
+        self.text
+            .byte_slice(..offset.get())
+            .chars()
+            .next_back()
+            .map(|character| (offset.get() - character.len_utf8()).into())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn next_char_boundary(&self, offset: ByteOffset) -> ByteOffset {
+        debug_assert!(self.validate_offset(offset).is_ok());
+
+        if offset.get() + 1 < self.len_bytes()
+            && self.text.byte(offset.get()) == b'\r'
+            && self.text.byte(offset.get() + 1) == b'\n'
+        {
+            return (offset.get() + 2).into();
+        }
+
+        self.text
+            .byte_slice(offset.get()..)
+            .chars()
+            .next()
+            .map(|character| (offset.get() + character.len_utf8()).into())
+            .unwrap_or_else(|| self.len_bytes().into())
+    }
+
     pub fn snapshot(&self) -> DocumentSnapshot {
         DocumentSnapshot {
             id: self.id,
@@ -261,7 +297,7 @@ impl Document {
         self.validate_offset(range.end)
     }
 
-    fn validate_offset(&self, offset: ByteOffset) -> Result<(), EditError> {
+    pub(crate) fn validate_offset(&self, offset: ByteOffset) -> Result<(), EditError> {
         if offset.get() > self.len_bytes() {
             return Err(EditError::OutOfBounds {
                 offset,

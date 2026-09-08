@@ -9,4 +9,5 @@ members = ["crates/caduceus-core"]
 resolver = "3"
 
 [dependencies]
+caduceus-core = { path = "crates/caduceus-core" }
 gpui = "=0.2.2"

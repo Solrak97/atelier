@@ -1,26 +1,33 @@
+mod editor;
+
+use caduceus_core::Document;
+use editor::EditorView;
 use gpui::{
-    App, Application, Bounds, Context, Window, WindowBounds, WindowOptions, div, prelude::*, px,
-    rgb, size,
+    App, Application, Bounds, Focusable, TitlebarOptions, WindowBounds, WindowOptions, prelude::*,
+    px, size,
 };
 
-struct Caduceus;
+fn initial_document() -> Document {
+    let Some(path) = std::env::args_os().nth(1) else {
+        return Document::new(
+            "# Caduceus\n\nThe document core is connected.\nStart typing to edit this buffer.\n",
+        );
+    };
 
-impl Render for Caduceus {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgb(0x111318))
-            .text_color(rgb(0xd7dae0))
-            .text_xl()
-            .child("Caduceus")
-    }
+    Document::open(&path).unwrap_or_else(|error| {
+        eprintln!(
+            "failed to open {}: {error}",
+            std::path::Path::new(&path).display()
+        );
+        std::process::exit(1);
+    })
 }
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    let document = initial_document();
+
+    Application::new().run(move |cx: &mut App| {
+        editor::register_key_bindings(cx);
         cx.on_window_closed(|cx| {
             if cx.windows().is_empty() {
                 cx.quit();
@@ -32,10 +39,18 @@ fn main() {
 
         cx.open_window(
             WindowOptions {
+                titlebar: Some(TitlebarOptions {
+                    title: Some("Caduceus".into()),
+                    ..Default::default()
+                }),
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 ..Default::default()
             },
-            |_, cx| cx.new(|_| Caduceus),
+            |window, cx| {
+                let editor = cx.new(|cx| EditorView::new(document, cx));
+                window.focus(&editor.focus_handle(cx));
+                editor
+            },
         )
         .expect("failed to open the Caduceus window");
 
