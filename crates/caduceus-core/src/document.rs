@@ -194,6 +194,84 @@ impl Document {
         (index < self.len_lines()).then(|| self.text.line(index).to_string())
     }
 
+    pub(crate) fn previous_char_boundary(&self, offset: ByteOffset) -> ByteOffset {
+        debug_assert!(self.validate_offset(offset).is_ok());
+
+        if offset.get() >= 2
+            && self.text.byte(offset.get() - 2) == b'\r'
+            && self.text.byte(offset.get() - 1) == b'\n'
+        {
+            return (offset.get() - 2).into();
+        }
+
+        self.text
+            .byte_slice(..offset.get())
+            .chars()
+            .next_back()
+            .map(|character| (offset.get() - character.len_utf8()).into())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn next_char_boundary(&self, offset: ByteOffset) -> ByteOffset {
+        debug_assert!(self.validate_offset(offset).is_ok());
+
+        if offset.get() + 1 < self.len_bytes()
+            && self.text.byte(offset.get()) == b'\r'
+            && self.text.byte(offset.get() + 1) == b'\n'
+        {
+            return (offset.get() + 2).into();
+        }
+
+        self.text
+            .byte_slice(offset.get()..)
+            .chars()
+            .next()
+            .map(|character| (offset.get() + character.len_utf8()).into())
+            .unwrap_or_else(|| self.len_bytes().into())
+    }
+
+    pub(crate) fn line_index_at(&self, offset: ByteOffset) -> usize {
+        debug_assert!(self.validate_offset(offset).is_ok());
+        self.text.line_of_byte(offset.get())
+    }
+
+    pub(crate) fn last_line_index(&self) -> usize {
+        self.text.line_of_byte(self.len_bytes())
+    }
+
+    pub(crate) fn char_column_at(&self, offset: ByteOffset) -> usize {
+        debug_assert!(self.validate_offset(offset).is_ok());
+        let line_start = self.text.byte_of_line(self.line_index_at(offset));
+        self.text
+            .byte_slice(line_start..offset.get())
+            .chars()
+            .count()
+    }
+
+    pub(crate) fn offset_for_line_column(
+        &self,
+        line_index: usize,
+        char_column: usize,
+    ) -> Option<ByteOffset> {
+        if line_index > self.last_line_index() {
+            return None;
+        }
+
+        let line_start = self.text.byte_of_line(line_index);
+        if line_start == self.len_bytes() {
+            return Some(line_start.into());
+        }
+
+        let byte_column = self
+            .text
+            .line(line_index)
+            .chars()
+            .take(char_column)
+            .map(char::len_utf8)
+            .sum::<usize>();
+        Some((line_start + byte_column).into())
+    }
+
     pub fn snapshot(&self) -> DocumentSnapshot {
         DocumentSnapshot {
             id: self.id,
@@ -261,7 +339,7 @@ impl Document {
         self.validate_offset(range.end)
     }
 
-    fn validate_offset(&self, offset: ByteOffset) -> Result<(), EditError> {
+    pub(crate) fn validate_offset(&self, offset: ByteOffset) -> Result<(), EditError> {
         if offset.get() > self.len_bytes() {
             return Err(EditError::OutOfBounds {
                 offset,

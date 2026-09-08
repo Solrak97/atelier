@@ -56,6 +56,15 @@ Build and run the current application with:
 cargo run
 ```
 
+Pass a UTF-8 text file to open it in the editor:
+
+```sh
+cargo run -- README.md
+```
+
+The current editor supports typing, newlines, deletion, selection, and clipboard
+shortcuts. Changes remain in memory until file saving is implemented.
+
 ## License
 
 No license has been selected yet.
