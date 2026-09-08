@@ -2,14 +2,19 @@ use std::path::{Path, PathBuf};
 
 use atelier_core::{Document, Project, ProjectRegistry, RecentProject};
 use gpui::{
-    App, Context, Entity, FocusHandle, Focusable, KeyBinding, PathPromptOptions, PromptLevel,
-    Window, actions, div, prelude::*, rgb,
+    App, Context, Decorations, Entity, FocusHandle, Focusable, KeyBinding, MouseButton,
+    PathPromptOptions, Pixels, Point, PromptLevel, Window, actions, div, prelude::*, rgb,
 };
 
+use crate::context_menu::{self, ContextMenu};
+use crate::menu_bar::{self, MenuBarMenu};
 use crate::welcome;
 use crate::workspace::WorkspaceView;
 
-actions!(atelier_shell, [OpenFolder, CloseProject]);
+actions!(
+    atelier_shell,
+    [OpenFolder, CloseProject, CloseDocument, Quit]
+);
 
 pub fn register_key_bindings(cx: &mut App) {
     cx.bind_keys([KeyBinding::new("ctrl-o", OpenFolder, None)]);
@@ -34,6 +39,8 @@ pub struct AppShell {
     registry: ProjectRegistry,
     session: Session,
     message: Option<String>,
+    welcome_menu: Option<Point<Pixels>>,
+    bar_menu: Option<MenuBarMenu>,
     focus_handle: FocusHandle,
 }
 
@@ -47,6 +54,8 @@ impl AppShell {
             registry,
             session: Session::Welcome,
             message: None,
+            welcome_menu: None,
+            bar_menu: None,
             focus_handle: cx.focus_handle(),
         };
         if let Some((project, document)) = initial {
@@ -63,9 +72,140 @@ impl AppShell {
         self.message.as_deref()
     }
 
+    pub fn open_welcome_menu(
+        &mut self,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !matches!(self.session, Session::Welcome) {
+            return;
+        }
+        cx.stop_propagation();
+        window.prevent_default();
+        self.welcome_menu = Some(position);
+        cx.notify();
+    }
+
+    pub fn welcome_menu_overlay(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        let position = self.welcome_menu?;
+        Some(context_menu::overlay(
+            ContextMenu {
+                position,
+                items: vec!["Open Folder"],
+            },
+            cx,
+            |shell, cx| {
+                shell.welcome_menu = None;
+                cx.notify();
+            },
+            |shell, index, window, cx| {
+                shell.welcome_menu = None;
+                if index == 0 {
+                    shell.open_folder(window, cx);
+                }
+                cx.notify();
+            },
+        ))
+    }
+
+    pub fn bar_menu(&self) -> Option<MenuBarMenu> {
+        self.bar_menu
+    }
+
+    pub fn toggle_bar_menu(&mut self, menu: MenuBarMenu, cx: &mut Context<Self>) {
+        self.welcome_menu = None;
+        if self.bar_menu == Some(menu) {
+            self.bar_menu = None;
+        } else {
+            self.bar_menu = Some(menu);
+        }
+        cx.notify();
+    }
+
+    pub fn dismiss_bar_menu(&mut self, cx: &mut Context<Self>) {
+        self.bar_menu = None;
+        cx.notify();
+    }
+
+    pub fn choose_bar_item(
+        &mut self,
+        menu: MenuBarMenu,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.bar_menu = None;
+        match menu {
+            MenuBarMenu::File => match index {
+                0 => self.open_folder(window, cx),
+                1 => self.close_active_document(window, cx),
+                2 => self.close_project(window, cx),
+                3 => window.dispatch_action(Box::new(crate::editor::Save), cx),
+                4 => cx.quit(),
+                _ => {}
+            },
+            MenuBarMenu::Edit => {
+                let action: Box<dyn gpui::Action> = match index {
+                    0 => Box::new(crate::editor::Undo),
+                    1 => Box::new(crate::editor::Redo),
+                    2 => Box::new(crate::editor::Cut),
+                    3 => Box::new(crate::editor::Copy),
+                    4 => Box::new(crate::editor::Paste),
+                    5 => Box::new(crate::editor::SelectAll),
+                    6 => Box::new(crate::editor::Find),
+                    7 => Box::new(crate::editor::FindNext),
+                    8 => Box::new(crate::editor::Replace),
+                    9 => Box::new(crate::editor::ToggleComment),
+                    10 => Box::new(crate::editor::Indent),
+                    11 => Box::new(crate::editor::Outdent),
+                    12 => Box::new(crate::editor::GoToLine),
+                    13 => Box::new(crate::editor::GoToDefinition),
+                    14 => Box::new(crate::editor::FindReferences),
+                    15 => Box::new(crate::editor::GoBack),
+                    _ => {
+                        cx.notify();
+                        return;
+                    }
+                };
+                window.dispatch_action(action, cx);
+            }
+            MenuBarMenu::View if index == 0 => self.close_project(window, cx),
+            MenuBarMenu::Help if index == 0 => {
+                let answer = window.prompt(
+                    PromptLevel::Info,
+                    "Atelier",
+                    Some("A focused native IDE without built-in AI."),
+                    &["OK"],
+                    cx,
+                );
+                cx.spawn_in(window, async move |_, _| {
+                    let _ = answer.await;
+                })
+                .detach();
+            }
+            _ => {}
+        }
+        cx.notify();
+    }
+
+    fn close_active_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(workspace) = self.workspace().cloned() else {
+            return;
+        };
+        workspace.update(cx, |workspace, cx| {
+            workspace.close_active_document(window, cx);
+        });
+    }
+
     #[cfg(test)]
     pub fn is_welcome(&self) -> bool {
         matches!(self.session, Session::Welcome)
+    }
+
+    #[cfg(test)]
+    pub fn last_open(&self) -> Option<&Path> {
+        self.registry.last_open()
     }
 
     pub fn workspace(&self) -> Option<&Entity<WorkspaceView>> {
@@ -132,6 +272,19 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) {
         self.close_project(window, cx);
+    }
+
+    fn close_document_action(
+        &mut self,
+        _: &CloseDocument,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.close_active_document(window, cx);
+    }
+
+    fn quit_action(&mut self, _: &Quit, _: &mut Window, cx: &mut Context<Self>) {
+        cx.quit();
     }
 
     fn leave(&mut self, intent: LeaveIntent, window: &mut Window, cx: &mut Context<Self>) {
@@ -250,11 +403,16 @@ impl AppShell {
         let workspace = cx.new(|cx| WorkspaceView::new(project, document, cx));
         cx.observe(&workspace, |_, _, cx| cx.notify()).detach();
         self.session = Session::Workspace(workspace);
+        self.welcome_menu = None;
     }
 
     fn show_welcome(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Err(error) = self.registry.forget_last_open() {
+            eprintln!("failed to clear last project: {error}");
+        }
         self.session = Session::Welcome;
         self.message = None;
+        self.welcome_menu = None;
         window.focus(&self.focus_handle, cx);
         cx.notify();
     }
@@ -285,20 +443,38 @@ impl Focusable for AppShell {
 }
 
 impl Render for AppShell {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let client_side = matches!(window.window_decorations(), Decorations::Client { .. });
+
         div()
             .size_full()
             .flex()
+            .flex_col()
             .bg(rgb(0x111318))
             .text_color(rgb(0xd7dae0))
+            .when(client_side, |root| {
+                root.border_1().border_color(rgb(0x2a2e35)).on_mouse_down(
+                    MouseButton::Left,
+                    |event, window, _| {
+                        if let Some(edge) =
+                            menu_bar::resize_edge(event.position, window.viewport_size())
+                        {
+                            window.start_window_resize(edge);
+                        }
+                    },
+                )
+            })
             .track_focus(&self.focus_handle)
             .key_context("App")
             .on_action(cx.listener(Self::open_folder_action))
             .on_action(cx.listener(Self::close_project_action))
-            .child(match &self.session {
+            .on_action(cx.listener(Self::close_document_action))
+            .on_action(cx.listener(Self::quit_action))
+            .child(menu_bar::render(self, window, cx))
+            .child(div().min_h_0().flex_1().child(match &self.session {
                 Session::Welcome => welcome::render(self, cx).into_any_element(),
                 Session::Workspace(workspace) => workspace.clone().into_any_element(),
-            })
+            }))
     }
 }
 
@@ -394,6 +570,10 @@ mod tests {
                 assert!(!shell.is_welcome());
                 assert_eq!(shell.recent_projects().len(), 1);
                 assert_eq!(shell.recent_projects()[0].name, "demo");
+                assert_eq!(
+                    shell.last_open(),
+                    Some(fs::canonicalize(&project_dir).unwrap().as_path())
+                );
             })
             .unwrap();
         assert!(project_dir.join(".atelier").is_dir());
@@ -409,6 +589,29 @@ mod tests {
             .update(cx, |shell, _, _| {
                 assert!(shell.is_welcome());
                 assert_eq!(shell.recent_projects().len(), 1);
+                assert_eq!(shell.last_open(), None);
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn last_open_project_is_restored(cx: &mut TestAppContext) {
+        let home = TempHome::new();
+        let project_dir = home.project("resume");
+        fs::write(project_dir.join("notes.txt"), "hi").unwrap();
+        let mut registry = ProjectRegistry::empty(&home.paths());
+        registry.record(&project_dir).unwrap();
+        let project = Project::open(registry.last_open().unwrap()).unwrap();
+        let window = open_shell(cx, registry, Some((project, None)));
+
+        window
+            .update(cx, |shell, _, _| {
+                assert!(!shell.is_welcome());
+                assert_eq!(shell.recent_projects()[0].name, "resume");
+                assert_eq!(
+                    shell.last_open(),
+                    Some(fs::canonicalize(&project_dir).unwrap().as_path())
+                );
             })
             .unwrap();
     }

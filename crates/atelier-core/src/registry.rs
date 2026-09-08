@@ -20,6 +20,8 @@ pub struct RecentProject {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct RegistryFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_open: Option<PathBuf>,
     #[serde(default)]
     projects: Vec<RecentProject>,
 }
@@ -28,32 +30,50 @@ struct RegistryFile {
 #[derive(Clone, Debug)]
 pub struct ProjectRegistry {
     file: PathBuf,
+    last_open: Option<PathBuf>,
     projects: Vec<RecentProject>,
 }
 
 impl ProjectRegistry {
     pub fn load(paths: &AppPaths) -> io::Result<Self> {
         let file = paths.projects_file();
-        let projects = if file.exists() {
+        let (last_open, projects) = if file.exists() {
             let contents = fs::read_to_string(&file)?;
-            toml::from_str::<RegistryFile>(&contents)
-                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
-                .projects
+            let parsed = toml::from_str::<RegistryFile>(&contents)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+            (parsed.last_open, parsed.projects)
         } else {
-            Vec::new()
+            (None, Vec::new())
         };
-        Ok(Self { file, projects })
+        Ok(Self {
+            file,
+            last_open,
+            projects,
+        })
     }
 
     pub fn empty(paths: &AppPaths) -> Self {
         Self {
             file: paths.projects_file(),
+            last_open: None,
             projects: Vec::new(),
         }
     }
 
     pub fn projects(&self) -> &[RecentProject] {
         &self.projects
+    }
+
+    pub fn last_open(&self) -> Option<&Path> {
+        self.last_open.as_deref()
+    }
+
+    pub fn forget_last_open(&mut self) -> io::Result<()> {
+        if self.last_open.is_none() {
+            return Ok(());
+        }
+        self.last_open = None;
+        self.save()
     }
 
     pub fn record(&mut self, root: &Path) -> io::Result<&RecentProject> {
@@ -74,6 +94,7 @@ impl ProjectRegistry {
             },
         );
         self.projects.truncate(MAX_RECENT_PROJECTS);
+        self.last_open = Some(self.projects[0].path.clone());
         self.save()?;
         Ok(&self.projects[0])
     }
@@ -83,11 +104,17 @@ impl ProjectRegistry {
         let before = self.projects.len();
         self.projects
             .retain(|project| project.path != path && project.path != root);
-        if self.projects.len() == before {
+        let dropped_last_open = self.last_open.as_ref().is_some_and(|last| {
+            last == &path || last == root
+        });
+        if dropped_last_open {
+            self.last_open = None;
+        }
+        if self.projects.len() == before && !dropped_last_open {
             return Ok(false);
         }
         self.save()?;
-        Ok(true)
+        Ok(self.projects.len() != before)
     }
 
     fn save(&self) -> io::Result<()> {
@@ -95,6 +122,7 @@ impl ProjectRegistry {
             fs::create_dir_all(parent)?;
         }
         let contents = toml::to_string_pretty(&RegistryFile {
+            last_open: self.last_open.clone(),
             projects: self.projects.clone(),
         })
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
@@ -171,6 +199,39 @@ mod tests {
     }
 
     #[test]
+    fn last_open_follows_record_and_can_be_forgotten() {
+        let temp = TempDir::new("registry-last-open");
+        let first = temp.path().join("first");
+        let second = temp.path().join("second");
+        fs::create_dir(&first).unwrap();
+        fs::create_dir(&second).unwrap();
+        let (paths, mut registry) = registry_at(&temp);
+
+        registry.record(&first).unwrap();
+        assert_eq!(
+            registry.last_open(),
+            Some(fs::canonicalize(&first).unwrap().as_path())
+        );
+
+        registry.record(&second).unwrap();
+        assert_eq!(
+            registry.last_open(),
+            Some(fs::canonicalize(&second).unwrap().as_path())
+        );
+
+        let reloaded = ProjectRegistry::load(&paths).unwrap();
+        assert_eq!(reloaded.last_open(), registry.last_open());
+
+        registry.forget_last_open().unwrap();
+        assert_eq!(registry.last_open(), None);
+        assert_eq!(registry.projects().len(), 2);
+
+        let forgotten = ProjectRegistry::load(&paths).unwrap();
+        assert_eq!(forgotten.last_open(), None);
+        assert_eq!(forgotten.projects().len(), 2);
+    }
+
+    #[test]
     fn remove_drops_a_missing_or_canonical_path() {
         let temp = TempDir::new("registry-remove");
         let project = temp.path().join("gone");
@@ -180,6 +241,7 @@ mod tests {
 
         assert!(registry.remove(&project).unwrap());
         assert!(registry.projects().is_empty());
+        assert_eq!(registry.last_open(), None);
         assert!(!registry.remove(&project).unwrap());
     }
 

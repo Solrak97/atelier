@@ -39,10 +39,12 @@ state. The explorer hides `.atelier` the same way it hides `.git` and
 
 ### Launch and sessions
 
-Launching with no arguments shows a welcome screen. Passing a directory or file
-still opens that project immediately and records it. Only one project is open
-in a window at a time. Closing the project returns to the welcome screen;
-closing the window still quits.
+Launching with no arguments restores the last open project when one was left
+open. That path is stored in `projects.toml` as `last_open`. Closing the
+project returns to the welcome screen and clears `last_open`, so the next
+launch stays on welcome. Passing a directory or file still opens that project
+immediately and records it as last open. Only one project is open in a window
+at a time; closing the window still quits.
 
 ## Consequences
 

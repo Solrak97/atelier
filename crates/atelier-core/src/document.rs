@@ -150,16 +150,19 @@ pub struct Document {
     id: DocumentId,
     path: Option<PathBuf>,
     text: Rope,
+    saved: Rope,
     revision: Revision,
     modified: bool,
 }
 
 impl Document {
     pub fn new(text: impl AsRef<str>) -> Self {
+        let text = Rope::from(text.as_ref());
         Self {
             id: DocumentId::next(),
             path: None,
-            text: Rope::from(text.as_ref()),
+            text: text.clone(),
+            saved: text,
             revision: Revision::default(),
             modified: false,
         }
@@ -174,7 +177,11 @@ impl Document {
 
     pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
         let path = fs::canonicalize(path)?;
-        let text = fs::read_to_string(&path)?;
+        let bytes = fs::read(&path)?;
+        if bytes.contains(&0) {
+            return Err(unsupported_text_error());
+        }
+        let text = String::from_utf8(bytes).map_err(|_| unsupported_text_error())?;
         Ok(Self::with_path(path, text))
     }
 
@@ -195,7 +202,16 @@ impl Document {
     }
 
     pub fn mark_saved(&mut self) {
+        self.saved = self.text.clone();
         self.modified = false;
+    }
+
+    pub(crate) fn text_in(&self, range: ByteRange) -> Result<String, EditError> {
+        self.validate_range(range)?;
+        Ok(self
+            .text
+            .byte_slice(range.start.get()..range.end.get())
+            .to_string())
     }
 
     pub fn save(&mut self) -> io::Result<()> {
@@ -252,6 +268,90 @@ impl Document {
         (index < self.len_lines()).then(|| self.text.line(index).to_string())
     }
 
+    pub fn line_index_at(&self, offset: ByteOffset) -> usize {
+        debug_assert!(self.validate_offset(offset).is_ok());
+        self.text.line_of_byte(offset.get())
+    }
+
+    pub fn last_line_index(&self) -> usize {
+        self.text.line_of_byte(self.len_bytes())
+    }
+
+    pub fn line_start(&self, line_index: usize) -> Option<ByteOffset> {
+        (line_index <= self.last_line_index()).then(|| self.text.byte_of_line(line_index).into())
+    }
+
+    pub fn line_content_end(&self, line_index: usize) -> Option<ByteOffset> {
+        let start = self.line_start(line_index)?.get();
+        let line = self.line(line_index)?;
+        Some((start + line.len()).into())
+    }
+
+    pub fn line_full_end(&self, line_index: usize) -> Option<ByteOffset> {
+        if line_index >= self.last_line_index() {
+            Some(self.len_bytes().into())
+        } else {
+            self.line_start(line_index + 1)
+        }
+    }
+
+    pub fn char_at(&self, offset: ByteOffset) -> Option<char> {
+        if offset.get() >= self.len_bytes() {
+            return None;
+        }
+        self.text.byte_slice(offset.get()..).chars().next()
+    }
+
+    pub fn char_before(&self, offset: ByteOffset) -> Option<char> {
+        if offset.get() == 0 {
+            return None;
+        }
+        self.text.byte_slice(..offset.get()).chars().next_back()
+    }
+
+    pub fn previous_word_boundary(&self, offset: ByteOffset) -> ByteOffset {
+        if offset.get() == 0 {
+            return offset;
+        }
+        let mut pos = self.previous_char_boundary(offset);
+        while pos.get() > 0 && self.char_at(pos).is_some_and(char::is_whitespace) {
+            pos = self.previous_char_boundary(pos);
+        }
+        if self.char_at(pos).is_some_and(char::is_whitespace) {
+            return pos;
+        }
+        let word = self.char_at(pos).is_some_and(is_word_char);
+        while pos.get() > 0 {
+            let previous = self.previous_char_boundary(pos);
+            let Some(character) = self.char_at(previous) else {
+                break;
+            };
+            if character.is_whitespace() || is_word_char(character) != word {
+                break;
+            }
+            pos = previous;
+        }
+        pos
+    }
+
+    pub fn next_word_boundary(&self, offset: ByteOffset) -> ByteOffset {
+        let mut pos = offset;
+        if pos.get() >= self.len_bytes() {
+            return self.len_bytes().into();
+        }
+        let word = self.char_at(pos).is_some_and(is_word_char);
+        while let Some(character) = self.char_at(pos) {
+            if character.is_whitespace() || is_word_char(character) != word {
+                break;
+            }
+            pos = self.next_char_boundary(pos);
+        }
+        while self.char_at(pos).is_some_and(char::is_whitespace) {
+            pos = self.next_char_boundary(pos);
+        }
+        pos
+    }
+
     pub(crate) fn previous_char_boundary(&self, offset: ByteOffset) -> ByteOffset {
         debug_assert!(self.validate_offset(offset).is_ok());
 
@@ -286,15 +386,6 @@ impl Document {
             .next()
             .map(|character| (offset.get() + character.len_utf8()).into())
             .unwrap_or_else(|| self.len_bytes().into())
-    }
-
-    pub(crate) fn line_index_at(&self, offset: ByteOffset) -> usize {
-        debug_assert!(self.validate_offset(offset).is_ok());
-        self.text.line_of_byte(offset.get())
-    }
-
-    pub(crate) fn last_line_index(&self) -> usize {
-        self.text.line_of_byte(self.len_bytes())
     }
 
     pub(crate) fn char_column_at(&self, offset: ByteOffset) -> usize {
@@ -353,8 +444,7 @@ impl Document {
         }
 
         self.text.insert(offset.get(), text);
-        self.revision.advance();
-        self.modified = true;
+        self.commit_edit();
         Ok(self.revision)
     }
 
@@ -366,8 +456,7 @@ impl Document {
         }
 
         self.text.delete(range.start.get()..range.end.get());
-        self.revision.advance();
-        self.modified = true;
+        self.commit_edit();
         Ok(self.revision)
     }
 
@@ -384,9 +473,13 @@ impl Document {
         }
 
         self.text.replace(range.start.get()..range.end.get(), text);
-        self.revision.advance();
-        self.modified = true;
+        self.commit_edit();
         Ok(self.revision)
+    }
+
+    fn commit_edit(&mut self) {
+        self.revision.advance();
+        self.modified = self.text != self.saved;
     }
 
     fn validate_range(&self, range: ByteRange) -> Result<(), EditError> {
@@ -415,6 +508,20 @@ impl Document {
 
         Ok(())
     }
+}
+
+const UNSUPPORTED_TEXT_MESSAGE: &str = "file is not valid UTF-8 text";
+
+fn unsupported_text_error() -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, UNSUPPORTED_TEXT_MESSAGE)
+}
+
+pub fn is_unsupported_text(error: &io::Error) -> bool {
+    error.kind() == io::ErrorKind::InvalidData && error.to_string() == UNSUPPORTED_TEXT_MESSAGE
+}
+
+fn is_word_char(character: char) -> bool {
+    character.is_alphanumeric() || character == '_'
 }
 
 impl Default for Document {
@@ -496,9 +603,21 @@ mod tests {
 
         assert_eq!(document.delete((5..12).into()), Ok(Revision(2)));
         assert_eq!(document.text(), "Hello world");
+        assert!(!document.is_modified());
 
         assert_eq!(document.replace((6..11).into(), "Atelier"), Ok(Revision(3)));
         assert_eq!(document.text(), "Hello Atelier");
+        assert!(document.is_modified());
+    }
+
+    #[test]
+    fn matching_the_saved_buffer_clears_modified() {
+        let mut document = Document::new("hello");
+        document.insert(5.into(), " ").unwrap();
+        assert!(document.is_modified());
+        document.delete((5..6).into()).unwrap();
+        assert_eq!(document.text(), "hello");
+        assert!(!document.is_modified());
     }
 
     #[test]
@@ -675,5 +794,23 @@ mod tests {
         assert_eq!(document.path(), Some(path.as_path()));
         assert_eq!(document.text(), "hello\nfrom disk");
         assert_eq!(document.len_lines(), 2);
+    }
+
+    #[test]
+    fn rejects_binary_and_invalid_utf8() {
+        let directory = tempdir().unwrap();
+        let binary = directory.path().join("icon.bin");
+        fs::write(&binary, [0x89, b'P', b'N', b'G', 0, 1, 2, 3]).unwrap();
+        match Document::open(&binary) {
+            Err(error) => assert!(is_unsupported_text(&error)),
+            Ok(_) => panic!("binary file must be rejected"),
+        }
+
+        let invalid = directory.path().join("bad.txt");
+        fs::write(&invalid, [0xff, 0xfe, 0xfd]).unwrap();
+        match Document::open(&invalid) {
+            Err(error) => assert!(is_unsupported_text(&error)),
+            Ok(_) => panic!("invalid UTF-8 must be rejected"),
+        }
     }
 }

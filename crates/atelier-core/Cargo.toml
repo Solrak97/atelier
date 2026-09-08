@@ -2,6 +2,10 @@
 name = "atelier-core"
 version = "0.1.0"
 edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["Luis Carlos Quesada <luiscarlosquesada@gmail.com>"]
+description = "UI-independent document, editor, and project foundations for Atelier"
+repository = "https://github.com/Solrak97/atelier"
 publish = false
 
 [dependencies]

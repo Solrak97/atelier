@@ -40,6 +40,8 @@ Significant technical choices are recorded as architecture decisions:
   — XDG app directories, `.atelier/` project files, and the welcome session
 - [Syntax analysis and in-file referencing](docs/architecture/0003-syntax-and-in-file-referencing.md)
   — retained Tree-sitter trees and a language-agnostic per-file symbol graph
+- [Editor layers and add-ons](docs/architecture/0004-editor-layers-and-addons.md)
+  — text core, editor features, IDE intelligence, and language edit rules
 
 ## Development
 
@@ -60,8 +62,19 @@ Build and run the current application with:
 cargo run
 ```
 
-With no arguments, Atelier opens a welcome screen. Open a folder from there,
-or pass a directory or UTF-8 text file on the command line:
+Install a user-local launcher icon and desktop entry with:
+
+```sh
+./scripts/install-desktop.sh
+```
+
+That copies the current binary to `~/.local/bin/atelier` and registers
+`atelier.desktop` plus hicolor icons under `~/.local/share`.
+
+With no arguments, Atelier reopens the last project you left open. If you
+closed that project, or have never opened one, it shows the welcome screen.
+Use File → Open Folder, pick a recent project, or pass a directory or UTF-8
+text file on the command line:
 
 ```sh
 cargo run -- /path/to/project
@@ -71,21 +84,40 @@ cargo run -- README.md
 Application files live in XDG user directories (`~/.config/atelier`,
 `~/.local/share/atelier`, `~/.cache/atelier`). Opening a folder records it in
 the recent-project list and creates a `.atelier/` directory inside that
-project for later local state. `Ctrl+O` also opens a folder. Close Project on
-the sidebar returns to the welcome screen; unsaved files prompt to save,
-discard, or cancel.
+project for later local state. `Ctrl+O` also opens a folder. File → Close Project
+returns to the welcome screen. Unsaved files prompt to save, discard, or cancel.
 
-The project tree opens files into persistent tabs. The editor supports typing,
-newlines, horizontal and vertical movement, scrolling, selection, clipboard
-shortcuts, and `Ctrl+S` to save. Long files and the project tree show a
-vertical scrollbar that can be dragged or clicked. Closing a modified tab asks
-to save, discard, or cancel. Rust and TOML files keep an incremental Tree-sitter
+The project tree starts expanded and uses folder and file-type icons;
+click a folder to collapse or expand it.
+Files open into persistent tabs. File → Close closes the
+active tab. The editor is a text core (buffer, caret, selection, undo) with
+editor commands on top: indent, comments, line moves, find/replace, and
+bracket matching. Language highlighting and in-file navigation stay outside
+that core. Tabs show a dirty mark; the editor title adds `•` when a file is
+unsaved.
+
+Editing keys include `Tab` / `Shift+Tab`, `Ctrl+/`, `Ctrl+Shift+K` to delete a
+line, `Ctrl+Shift+D` to duplicate, `Alt+Up` / `Alt+Down` to move lines, word
+and document motion with `Ctrl` plus arrows or Home/End, and `Ctrl+G` to go to
+a line number selected in the buffer. `Ctrl+F` finds the current selection,
+`F3` / `Shift+F3` walk matches, `Alt+C` / `Alt+W` toggle case and whole-word,
+and `Ctrl+H` / `Ctrl+Alt+Enter` replace from the clipboard. `Escape` closes
+the find bar. Long files and the project tree show a vertical scrollbar that
+can be dragged or clicked. Closing a modified tab asks to save, discard, or
+cancel. Rust and TOML files
+keep an incremental Tree-sitter
 syntax tree and an in-file definition/reference graph, and receive syntax
-highlighting through the first built-in language extensions. `F12` jumps to a
+highlighting through the first built-in language extensions. Invalid syntax is
+underlined and counted in the status bar. `F12` jumps to a
 definition in the current file, `Shift+F12` cycles through its uses, and
 `Alt+Left` goes back. `Ctrl+click` also jumps. Unresolved names show a status
 message instead of leaving the file.
 
 ## License
 
-No license has been selected yet.
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option.

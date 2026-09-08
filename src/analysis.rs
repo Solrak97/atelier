@@ -1,6 +1,6 @@
 use atelier_core::{
-    ByteRange, DocumentSnapshot, Revision, SymbolGraph, SymbolKind, SymbolTag, SyntaxNode,
-    SyntaxTree,
+    ByteRange, DocumentSnapshot, ParseError, ParseErrorKind, Revision, SymbolGraph, SymbolKind,
+    SymbolTag, SyntaxNode, SyntaxTree,
 };
 use tree_sitter::{InputEdit, Parser, Point, Query, QueryCursor, StreamingIterator, Tree};
 
@@ -53,22 +53,23 @@ impl SyntaxSession {
         }
         .ok_or_else(|| "tree-sitter produced no tree".to_owned())?;
 
-        self.syntax = Some(SyntaxTree::new(
+        let syntax = SyntaxTree::with_errors(
             snapshot.revision(),
             convert_node(tree.root_node()),
-        ));
+            collect_parse_errors(tree.root_node()),
+        );
         self.symbols = self
             .tags
             .as_ref()
             .map(|query| extract_symbols(query, &tree, &source))
             .unwrap_or_default();
+        self.syntax = Some(syntax);
         self.tree = Some(tree);
         self.source = source;
         self.revision = Some(snapshot.revision());
         Ok(())
     }
 
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn syntax(&self) -> Option<&SyntaxTree> {
         self.syntax.as_ref()
     }
@@ -86,6 +87,34 @@ fn convert_node(node: tree_sitter::Node<'_>) -> SyntaxNode {
         ByteRange::from(node.start_byte()..node.end_byte()),
         children,
     )
+}
+
+fn collect_parse_errors(node: tree_sitter::Node<'_>) -> Vec<ParseError> {
+    let mut errors = Vec::new();
+    collect_parse_errors_into(node, &mut errors);
+    errors
+}
+
+fn collect_parse_errors_into(node: tree_sitter::Node<'_>, errors: &mut Vec<ParseError>) {
+    if node.is_error() {
+        errors.push(ParseError::new(
+            ByteRange::from(node.start_byte()..node.end_byte()),
+            ParseErrorKind::Error,
+        ));
+        return;
+    }
+    if node.is_missing() {
+        errors.push(ParseError::new(
+            ByteRange::from(node.start_byte()..node.end_byte()),
+            ParseErrorKind::Missing,
+        ));
+        return;
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_parse_errors_into(child, errors);
+    }
 }
 
 fn extract_symbols(query: &Query, tree: &Tree, source: &str) -> SymbolGraph {
@@ -356,5 +385,32 @@ mod tests {
             symbols.find_references(symbols.references()[0].name_range().start),
             ReferenceLookup::Unresolved(_)
         ));
+    }
+
+    #[test]
+    fn rust_parse_errors_are_reported_and_cleared() {
+        let (mut document, mut session) = session_for("bad.rs", "fn main() { let x = ; }\n");
+        let errors = session.syntax().expect("tree").errors();
+        assert!(
+            !errors.is_empty(),
+            "invalid rust should produce at least one parse error"
+        );
+        assert!(
+            errors.iter().any(|error| error.range().len() > 0),
+            "error ranges should cover the invalid syntax"
+        );
+
+        document
+            .replace(
+                atelier_core::ByteRange::from(0..document.len_bytes()),
+                "fn main() { let x = 1; }\n",
+            )
+            .unwrap();
+        session.sync(&document.snapshot()).unwrap();
+
+        assert!(
+            session.syntax().expect("tree after fix").errors().is_empty(),
+            "fixing the text should clear parse errors"
+        );
     }
 }
