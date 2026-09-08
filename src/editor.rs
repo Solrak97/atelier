@@ -1,6 +1,6 @@
 use std::{io, ops::Range};
 
-use caduceus_core::{ByteOffset, Document, Editor, Revision};
+use atelier_core::{ByteOffset, Document, Editor, Revision};
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
     Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId, Hsla, KeyBinding,
@@ -14,7 +14,7 @@ use crate::languages::{HighlightKind, HighlightSpan, LanguageExtension, registry
 use crate::scrollbar::VerticalScroll;
 
 actions!(
-    caduceus_editor,
+    atelier_editor,
     [
         Backspace,
         Delete,

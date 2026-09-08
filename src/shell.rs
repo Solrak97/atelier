@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use caduceus_core::{Document, Project, ProjectRegistry, RecentProject};
+use atelier_core::{Document, Project, ProjectRegistry, RecentProject};
 use gpui::{
     App, Context, Entity, FocusHandle, Focusable, KeyBinding, PathPromptOptions, PromptLevel,
     Window, actions, div, prelude::*, rgb,
@@ -9,7 +9,7 @@ use gpui::{
 use crate::welcome;
 use crate::workspace::WorkspaceView;
 
-actions!(caduceus_shell, [OpenFolder, CloseProject]);
+actions!(atelier_shell, [OpenFolder, CloseProject]);
 
 pub fn register_key_bindings(cx: &mut App) {
     cx.bind_keys([KeyBinding::new("ctrl-o", OpenFolder, None)]);
@@ -222,7 +222,7 @@ impl AppShell {
         }
         if let Err(error) = project.ensure_metadata_dir() {
             self.message = Some(format!(
-                "Opened {}, but could not create .caduceus/: {error}",
+                "Opened {}, but could not create .atelier/: {error}",
                 project.root().display()
             ));
         } else {
@@ -309,7 +309,7 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use caduceus_core::AppPaths;
+    use atelier_core::AppPaths;
     use gpui::TestAppContext;
 
     use super::*;
@@ -323,7 +323,7 @@ mod tests {
                 .unwrap()
                 .as_nanos();
             let path = std::env::temp_dir()
-                .join(format!("caduceus-shell-{}-{unique}", std::process::id()));
+                .join(format!("atelier-shell-{}-{unique}", std::process::id()));
             fs::create_dir_all(&path).unwrap();
             Self(path)
         }
@@ -396,7 +396,7 @@ mod tests {
                 assert_eq!(shell.recent_projects()[0].name, "demo");
             })
             .unwrap();
-        assert!(project_dir.join(".caduceus").is_dir());
+        assert!(project_dir.join(".atelier").is_dir());
 
         window
             .update(cx, |shell, window, cx| {

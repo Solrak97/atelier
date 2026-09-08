@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use caduceus_core::{Document, Project, ProjectEntry, ProjectEntryKind};
+use atelier_core::{Document, Project, ProjectEntry, ProjectEntryKind};
 use gpui::{
     App, Context, Entity, Focusable, MouseButton, MouseUpEvent, PromptLevel, Window, div,
     prelude::*, px, rgb,
@@ -501,7 +501,7 @@ mod tests {
                 .unwrap()
                 .as_nanos();
             let path = std::env::temp_dir().join(format!(
-                "caduceus-workspace-{}-{unique}",
+                "atelier-workspace-{}-{unique}",
                 std::process::id()
             ));
             fs::create_dir(&path).unwrap();

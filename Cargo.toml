@@ -1,15 +1,15 @@
 [package]
-name = "caduceus"
+name = "atelier"
 version = "0.1.0"
 edition = "2024"
 publish = false
 
 [workspace]
-members = ["crates/caduceus-core"]
+members = ["crates/atelier-core"]
 resolver = "3"
 
 [dependencies]
-caduceus-core = { path = "crates/caduceus-core" }
+atelier-core = { path = "crates/atelier-core" }
 gpui = { git = "https://github.com/zed-industries/zed.git", rev = "490aad88d5c754e4b0fbbb2bf1e3d6936df27729" }
 gpui_platform = { git = "https://github.com/zed-industries/zed.git", rev = "490aad88d5c754e4b0fbbb2bf1e3d6936df27729", features = [
     "wayland",

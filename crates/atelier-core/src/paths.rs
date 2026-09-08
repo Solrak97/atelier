@@ -14,12 +14,12 @@ pub struct AppPaths {
 }
 
 impl AppPaths {
-    /// Resolve and create the standard XDG roots for Caduceus.
+    /// Resolve and create the standard XDG roots for Atelier.
     pub fn standard() -> io::Result<Self> {
-        let dirs = ProjectDirs::from("", "Caduceus", "caduceus").ok_or_else(|| {
+        let dirs = ProjectDirs::from("", "Atelier", "atelier").ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::NotFound,
-                "could not determine Caduceus application directories",
+                "could not determine Atelier application directories",
             )
         })?;
         Self::from_dirs(dirs.config_dir(), dirs.data_dir(), dirs.cache_dir())

@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn highlights_toml_source() {
-        let source = "[package]\nname = \"caduceus\"\nversion = 1\n";
+        let source = "[package]\nname = \"atelier\"\nversion = 1\n";
         let extension = registry()
             .extension_for_path(Path::new("Cargo.toml"))
             .unwrap();
@@ -293,7 +293,7 @@ mod tests {
         assert!(contains_highlight(
             source,
             &spans,
-            "\"caduceus\"",
+            "\"atelier\"",
             HighlightKind::String
         ));
         assert!(contains_highlight(

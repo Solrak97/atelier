@@ -12,25 +12,25 @@ for LSP before either exists, would leave the editor unable to answer "what is
 this node?" or "where is this name bound in this file?"
 
 Issue #10 still wants language-agnostic cores. Grammars must not leak into
-`caduceus-core`.
+`atelier-core`.
 
 ## Decision
 
 ### Layers
 
 1. **Syntax trees** — each language extension retains an incremental Tree-sitter
-   tree and projects it into a Caduceus `SyntaxTree` (named node kinds and UTF-8
+   tree and projects it into a Atelier `SyntaxTree` (named node kinds and UTF-8
    byte ranges). Highlighting stays a separate consumer of the existing
    highlighter; paint is not rewritten onto the tree in this milestone.
 2. **In-file symbols** — tags queries emit language-agnostic `SymbolTag` values.
-   `caduceus-core` binds them into a `SymbolGraph`: definitions, references,
+   `atelier-core` binds them into a `SymbolGraph`: definitions, references,
    optional containers, and duplicate names in the same scope.
 3. **LSP later** — a language server fills the same `SymbolGraph` types. It must
    not invent a second navigation model.
 
 ### Ownership
 
-`caduceus-core` owns `SyntaxTree`, `SymbolGraph`, and document snapshots. The
+`atelier-core` owns `SyntaxTree`, `SymbolGraph`, and document snapshots. The
 application crate owns parsers, grammars (`tree-sitter-rust`,
 `tree-sitter-toml-ng`), and tags queries. Editor and document cores do not
 import a grammar crate.
@@ -55,7 +55,7 @@ to prove the same pipeline, not a complete TOML symbol model.
 
 ## Alternatives considered
 
-- **Store `tree_sitter::Tree` in `caduceus-core`:** true incrementality would
+- **Store `tree_sitter::Tree` in `atelier-core`:** true incrementality would
   live next to the document, but the core would depend on Tree-sitter and make
   grammar-free tests harder.
 - **Rewrite highlighting onto the retained tree now:** extra paint risk with no

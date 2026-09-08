@@ -494,10 +494,10 @@ mod tests {
         assert_eq!(document.text(), "Hello world");
 
         assert_eq!(
-            document.replace((6..11).into(), "Caduceus"),
+            document.replace((6..11).into(), "Atelier"),
             Ok(Revision(3))
         );
-        assert_eq!(document.text(), "Hello Caduceus");
+        assert_eq!(document.text(), "Hello Atelier");
     }
 
     #[test]
@@ -663,7 +663,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "caduceus-document-{}-{unique}.txt",
+            "atelier-document-{}-{unique}.txt",
             std::process::id()
         ));
 

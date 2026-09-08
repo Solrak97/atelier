@@ -407,6 +407,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "atelier"
+version = "0.1.0"
+dependencies = [
+ "atelier-core",
+ "gpui",
+ "gpui_platform",
+ "tree-sitter",
+ "tree-sitter-highlight",
+ "tree-sitter-rust",
+ "tree-sitter-toml-ng",
+]
+
+[[package]]
+name = "atelier-core"
+version = "0.1.0"
+dependencies = [
+ "crop",
+ "directories",
+ "serde",
+ "tempfile",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "atomic"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -724,30 +748,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3a53fac24f34a81bc9954b5d6cfce0c21e18ec6959f44f56e8e90e4bb7c346c"
 dependencies = [
  "libbz2-rs-sys",
-]
-
-[[package]]
-name = "caduceus"
-version = "0.1.0"
-dependencies = [
- "caduceus-core",
- "gpui",
- "gpui_platform",
- "tree-sitter",
- "tree-sitter-highlight",
- "tree-sitter-rust",
- "tree-sitter-toml-ng",
-]
-
-[[package]]
-name = "caduceus-core"
-version = "0.1.0"
-dependencies = [
- "crop",
- "directories",
- "serde",
- "tempfile",
- "toml 0.8.23",
 ]
 
 [[package]]

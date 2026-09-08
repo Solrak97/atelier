@@ -7,10 +7,10 @@ use std::{
 
 use crate::Document;
 
-/// Directory created at a project root for Caduceus-owned project files.
-pub const PROJECT_METADATA_DIR: &str = ".caduceus";
+/// Directory created at a project root for Atelier-owned project files.
+pub const PROJECT_METADATA_DIR: &str = ".atelier";
 
-/// A directory opened as a Caduceus project.
+/// A directory opened as a Atelier project.
 pub struct Project {
     root: PathBuf,
     entries: Vec<ProjectEntry>,
@@ -157,7 +157,7 @@ mod tests {
                 .unwrap()
                 .as_nanos();
             let path = std::env::temp_dir()
-                .join(format!("caduceus-project-{}-{unique}", std::process::id()));
+                .join(format!("atelier-project-{}-{unique}", std::process::id()));
             fs::create_dir_all(&path).unwrap();
             Self(path)
         }

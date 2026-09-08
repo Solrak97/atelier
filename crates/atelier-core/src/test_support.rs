@@ -15,7 +15,7 @@ impl TempDir {
             .unwrap()
             .as_nanos();
         let path =
-            std::env::temp_dir().join(format!("caduceus-{label}-{}-{unique}", std::process::id()));
+            std::env::temp_dir().join(format!("atelier-{label}-{}-{unique}", std::process::id()));
         fs::create_dir_all(&path).unwrap();
         Self { path }
     }
